@@ -1,2 +1,4 @@
 tests/app.log
 tests/app.log.answers.json
+
+get_hardware_specs.ps1
