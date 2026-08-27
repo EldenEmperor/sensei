@@ -5,7 +5,7 @@
 # Exit 0 = continue (stdout shown dim). Exit 2 on PreToolUse/UserPromptSubmit = block
 # (stderr becomes the reason). Anything else = warn and continue.
 
-function Invoke-KakunaHooks {
+function Invoke-SenseiHooks {
     param(
         [string]$Event,
         [string]$ToolName = '',
@@ -15,7 +15,7 @@ function Invoke-KakunaHooks {
         [string]$LastMessage = $null
     )
     $result = @{ Block = $false; Reason = '' }
-    $hooks = @(Get-KakunaHooks | Where-Object { [string]$_.event -eq $Event })
+    $hooks = @(Get-SenseiHooks | Where-Object { [string]$_.event -eq $Event })
     if ($hooks.Count -eq 0) { return $result }
 
     foreach ($h in $hooks) {
@@ -52,26 +52,26 @@ function Invoke-KakunaHooks {
                 $errTask = $p.StandardError.ReadToEndAsync()
                 if (-not $p.WaitForExit(30000)) {
                     try { $p.Kill($true) } catch { }
-                    Write-KakunaNote "hook timed out (30s): $($h.command)"
+                    Write-SenseiNote "hook timed out (30s): $($h.command)"
                     continue
                 }
                 $p.WaitForExit()
                 $out = $outTask.GetAwaiter().GetResult()
                 $err = $errTask.GetAwaiter().GetResult()
                 if ($p.ExitCode -eq 0) {
-                    if ($out -and $out.Trim()) { Write-KakunaNote "hook: $($out.Trim())" }
+                    if ($out -and $out.Trim()) { Write-SenseiNote "hook: $($out.Trim())" }
                 } elseif ($p.ExitCode -eq 2 -and $Event -in 'PreToolUse', 'UserPromptSubmit') {
                     $result.Block = $true
                     $result.Reason = if ($err) { $err.Trim() } else { "blocked by hook: $($h.command)" }
                     return $result
                 } else {
-                    Write-KakunaNote "hook exited $($p.ExitCode): $($h.command)$(if ($err) { " — $($err.Trim())" })"
+                    Write-SenseiNote "hook exited $($p.ExitCode): $($h.command)$(if ($err) { " — $($err.Trim())" })"
                 }
             } finally {
                 $p.Dispose()
             }
         } catch {
-            Write-KakunaNote "hook failed to run: $($_.Exception.Message)"
+            Write-SenseiNote "hook failed to run: $($_.Exception.Message)"
         }
     }
     return $result

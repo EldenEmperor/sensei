@@ -1,7 +1,7 @@
-# config.ps1 — config load/save, project .kakuna.json, first-run setup,
-# sessions (save/resume), KAKUNA.md memory, cost estimates.
+# config.ps1 — config load/save, project .sensei.json, first-run setup,
+# sessions (save/resume), SENSEI.md memory, cost estimates.
 
-$script:ConfigDir  = Join-Path $HOME '.kakuna'
+$script:ConfigDir  = Join-Path $HOME '.sensei'
 $script:ConfigPath = Join-Path $script:ConfigDir 'config.json'
 $script:SessionDir = Join-Path $script:ConfigDir 'sessions'
 $script:SessionPath = $null
@@ -42,7 +42,7 @@ $script:ModelPrices = @{
     'gpt-4o'     = @(2.5, 10.0)
 }
 
-function Initialize-KakunaConfig {
+function Initialize-SenseiConfig {
     foreach ($dir in $script:ConfigDir, $script:SessionDir) {
         if (-not (Test-Path -LiteralPath $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
     }
@@ -52,26 +52,26 @@ function Initialize-KakunaConfig {
             $saved = Get-Content -LiteralPath $script:ConfigPath -Raw | ConvertFrom-Json -AsHashtable
             foreach ($k in $saved.Keys) { $cfg[$k] = $saved[$k] }
         } catch {
-            Write-KakunaNote "config.json is unreadable, using defaults ($($_.Exception.Message))"
+            Write-SenseiNote "config.json is unreadable, using defaults ($($_.Exception.Message))"
         }
     }
     $script:Config = $cfg
 
     $script:ProjectConfig = @{}
-    $projPath = Join-Path (Get-Location).Path '.kakuna.json'
+    $projPath = Join-Path (Get-Location).Path '.sensei.json'
     if (Test-Path -LiteralPath $projPath) {
         try {
             $loaded = Get-Content -LiteralPath $projPath -Raw | ConvertFrom-Json -AsHashtable
             if ($loaded) { $script:ProjectConfig = $loaded }
         } catch {
-            Write-KakunaNote ".kakuna.json is unreadable, ignoring ($($_.Exception.Message))"
+            Write-SenseiNote ".sensei.json is unreadable, ignoring ($($_.Exception.Message))"
         }
     }
 
     if (-not $script:LocalMode -and -not (Get-OpenAIApiKey)) { Invoke-FirstRunSetup }
 }
 
-function Save-KakunaConfig {
+function Save-SenseiConfig {
     ConvertTo-Json -InputObject (@{} + $script:Config) -Depth 12 |
         Set-Content -LiteralPath $script:ConfigPath -Encoding utf8NoBOM
 }
@@ -85,7 +85,7 @@ function Set-ActiveModel {
     param([string]$Name)
     if ($script:LocalMode) { $script:Config.local_model = $Name }
     else { $script:Config.model = $Name }
-    Save-KakunaConfig
+    Save-SenseiConfig
 }
 
 function Get-OpenAIApiKey {
@@ -96,7 +96,7 @@ function Get-OpenAIApiKey {
 
 # --- merged project/user views ---------------------------------------------
 
-function Get-KakunaMcpServers {
+function Get-SenseiMcpServers {
     $merged = [ordered]@{}
     foreach ($src in @($script:Config.mcpServers, $script:ProjectConfig.mcpServers)) {
         if ($src -is [hashtable] -or $src -is [System.Collections.IDictionary]) {
@@ -106,7 +106,7 @@ function Get-KakunaMcpServers {
     return $merged
 }
 
-function Get-KakunaAllowRules {
+function Get-SenseiAllowRules {
     $rules = @()
     if ($script:Config.permissions -and $script:Config.permissions.allow) {
         foreach ($r in @($script:Config.permissions.allow)) { $rules += @{ Rule = [string]$r; Source = 'user' } }
@@ -117,24 +117,24 @@ function Get-KakunaAllowRules {
     return $rules
 }
 
-function Get-KakunaHooks {
+function Get-SenseiHooks {
     $hooks = @()
     if ($script:Config.hooks) { $hooks += @($script:Config.hooks) }
     if ($script:ProjectConfig.hooks) { $hooks += @($script:ProjectConfig.hooks) }
     return $hooks
 }
 
-# --- KAKUNA.md memory -------------------------------------------------------
+# --- SENSEI.md memory -------------------------------------------------------
 
-function Get-KakunaMemory {
+function Get-SenseiMemory {
     $out = @()
-    # global first, then every KAKUNA.md from the drive root down to cwd
+    # global first, then every SENSEI.md from the drive root down to cwd
     # (nearest last so more-specific memory wins when the model reads top-to-bottom)
-    $candidates = @(Join-Path $script:ConfigDir 'KAKUNA.md')
+    $candidates = @(Join-Path $script:ConfigDir 'SENSEI.md')
     $chain = @()
     $dir = (Get-Location).Path
     while ($dir) {
-        $chain += (Join-Path $dir 'KAKUNA.md')
+        $chain += (Join-Path $dir 'SENSEI.md')
         $parent = Split-Path -Parent $dir
         if (-not $parent -or $parent -eq $dir) { break }
         $dir = $parent
@@ -145,15 +145,15 @@ function Get-KakunaMemory {
     foreach ($p in $candidates) {
         if (-not $seen.Add($p.ToLower())) { continue }
         if (Test-Path -LiteralPath $p -PathType Leaf) {
-            $content = Read-KakunaMemoryFile -Path $p
+            $content = Read-SenseiMemoryFile -Path $p
             $out += @{ Path = $p; Content = $content }
         }
     }
     return $out
 }
 
-function Read-KakunaMemoryFile {
-    # Read a KAKUNA.md, resolving one level of `@relative/path.md` import lines.
+function Read-SenseiMemoryFile {
+    # Read a SENSEI.md, resolving one level of `@relative/path.md` import lines.
     param([string]$Path, [int]$Depth = 0)
     $content = Get-Content -LiteralPath $Path -Raw
     if ($content.Length -gt 20000) { $content = $content.Substring(0, 20000) + "`n[truncated]" }
@@ -163,14 +163,14 @@ function Read-KakunaMemoryFile {
         if ($line -match '^\s*@([^\s]+\.md)\s*$') {
             $imp = Join-Path $baseDir $Matches[1]
             if (Test-Path -LiteralPath $imp -PathType Leaf) {
-                "<!-- imported $($Matches[1]) -->`n" + (Read-KakunaMemoryFile -Path $imp -Depth ($Depth + 1))
+                "<!-- imported $($Matches[1]) -->`n" + (Read-SenseiMemoryFile -Path $imp -Depth ($Depth + 1))
             } else { $line }
         } else { $line }
     }
     return ($lines -join "`n")
 }
 
-function Get-KakunaStyleDirective {
+function Get-SenseiStyleDirective {
     $style = [string]$script:Config.output_style
     if ($script:OutputStyles.ContainsKey($style)) { return $script:OutputStyles[$style] }
     return ''
@@ -178,7 +178,7 @@ function Get-KakunaStyleDirective {
 
 # --- cost -------------------------------------------------------------------
 
-function Get-KakunaCostLine {
+function Get-SenseiCostLine {
     $inTok = [double]$script:TotalPromptTokens
     $outTok = [double]$script:TotalCompletionTokens
     $line = 'tokens ~{0:n1}k in / {1:n1}k out | model {2}' -f ($inTok / 1000), ($outTok / 1000), (Get-ActiveModel)
@@ -198,45 +198,45 @@ function Get-KakunaCostLine {
 
 function Invoke-FirstRunSetup {
     if ($script:PrintMode -or [Console]::IsInputRedirected) {
-        Write-KakunaError 'No OpenAI API key found (set OPENAI_API_KEY, or use --local).'
+        Write-SenseiError 'No OpenAI API key found (set OPENAI_API_KEY, or use --local).'
         exit 1
     }
     Write-Host ''
-    Write-Host "$($script:Theme.Accent)Kakuna needs an OpenAI API key (none found in OPENAI_API_KEY or $script:ConfigPath).$($script:Theme.Reset)"
-    Write-Host "$($script:Theme.Dim)(Tip: run 'kakuna --local' to use a local Ollama model instead — no key needed.)$($script:Theme.Reset)"
+    Write-Host "$($script:Theme.Accent)Sensei needs an OpenAI API key (none found in OPENAI_API_KEY or $script:ConfigPath).$($script:Theme.Reset)"
+    Write-Host "$($script:Theme.Dim)(Tip: run 'sensei --local' to use a local Ollama model instead — no key needed.)$($script:Theme.Reset)"
     $secure = Read-Host 'Paste your OpenAI API key' -AsSecureString
     $key = [System.Net.NetworkCredential]::new('', $secure).Password.Trim()
     if (-not $key) {
-        Write-KakunaError 'No key entered. Set OPENAI_API_KEY and rerun.'
+        Write-SenseiError 'No key entered. Set OPENAI_API_KEY and rerun.'
         exit 1
     }
-    Write-KakunaNote 'validating key…'
+    Write-SenseiNote 'validating key…'
     if (-not (Test-OpenAIKey $key)) {
-        Write-KakunaError 'The OpenAI API rejected that key. Check it and rerun.'
+        Write-SenseiError 'The OpenAI API rejected that key. Check it and rerun.'
         exit 1
     }
     Write-Host "$($script:Theme.Ok)Key OK.$($script:Theme.Reset)"
-    Write-Host 'How should Kakuna remember it?'
+    Write-Host 'How should Sensei remember it?'
     Write-Host '  [1] User environment variable OPENAI_API_KEY (recommended)'
-    Write-Host '  [2] Save in ~/.kakuna/config.json (plaintext on disk)'
+    Write-Host '  [2] Save in ~/.sensei/config.json (plaintext on disk)'
     Write-Host '  [3] This session only'
     switch ((Read-Host 'Choice [1/2/3]').Trim()) {
-        '2' { $script:Config.api_key = $key; Save-KakunaConfig }
+        '2' { $script:Config.api_key = $key; Save-SenseiConfig }
         '3' { }
         default {
             [Environment]::SetEnvironmentVariable('OPENAI_API_KEY', $key, 'User')
-            Write-KakunaNote 'saved to your user environment (new shells pick it up automatically)'
+            Write-SenseiNote 'saved to your user environment (new shells pick it up automatically)'
         }
     }
     $env:OPENAI_API_KEY = $key
 
     $userPath = [string][Environment]::GetEnvironmentVariable('Path', 'User')
-    if ($userPath -notlike "*$script:KakunaRoot*") {
-        $ans = Read-Host "Add $script:KakunaRoot to your user PATH so 'kakuna' works from any shell? [Y/n]"
+    if ($userPath -notlike "*$script:SenseiRoot*") {
+        $ans = Read-Host "Add $script:SenseiRoot to your user PATH so 'sensei' works from any shell? [Y/n]"
         if ($ans.Trim() -notmatch '^[nN]') {
-            [Environment]::SetEnvironmentVariable('Path', ($userPath.TrimEnd(';') + ';' + $script:KakunaRoot), 'User')
-            $env:Path += ';' + $script:KakunaRoot
-            Write-KakunaNote 'PATH updated (new shells pick it up automatically)'
+            [Environment]::SetEnvironmentVariable('Path', ($userPath.TrimEnd(';') + ';' + $script:SenseiRoot), 'User')
+            $env:Path += ';' + $script:SenseiRoot
+            Write-SenseiNote 'PATH updated (new shells pick it up automatically)'
         }
     }
     Write-Host ''
@@ -244,7 +244,7 @@ function Invoke-FirstRunSetup {
 
 # --- sessions ---------------------------------------------------------------
 
-function Save-KakunaSession {
+function Save-SenseiSession {
     if (-not $script:Config -or -not $script:Config.save_sessions -or $script:PrintMode) { return }
     if (-not $script:Messages -or $script:Messages.Count -le 1) { return }
     if (-not $script:SessionPath) {
@@ -253,19 +253,19 @@ function Save-KakunaSession {
     try {
         ConvertTo-Json -InputObject @($script:Messages) -Depth 30 |
             Set-Content -LiteralPath $script:SessionPath -Encoding utf8NoBOM
-        Write-KakunaNote "session saved → $script:SessionPath"
+        Write-SenseiNote "session saved → $script:SessionPath"
     } catch {
-        Write-KakunaNote "couldn't save session: $($_.Exception.Message)"
+        Write-SenseiNote "couldn't save session: $($_.Exception.Message)"
     }
 }
 
-function Get-KakunaSessionFiles {
+function Get-SenseiSessionFiles {
     if (-not (Test-Path -LiteralPath $script:SessionDir)) { return @() }
     return @(Get-ChildItem -LiteralPath $script:SessionDir -Filter '*.json' |
         Sort-Object LastWriteTime -Descending | Select-Object -First 10)
 }
 
-function Restore-KakunaSession {
+function Restore-SenseiSession {
     param([string]$Path)
     $raw = Get-Content -LiteralPath $Path -Raw | ConvertFrom-Json -AsHashtable
     $msgs = [System.Collections.Generic.List[object]]::new()
@@ -284,7 +284,7 @@ function Restore-KakunaSession {
     }
     # validation: keep assistant-with-tool_calls only when every result follows; drop orphan tool msgs
     $valid = [System.Collections.Generic.List[object]]::new()
-    $valid.Add(@{ role = 'system'; content = (Get-KakunaSystemPrompt) })
+    $valid.Add(@{ role = 'system'; content = (Get-SenseiSystemPrompt) })
     $i = 0
     while ($i -lt $msgs.Count) {
         $m = $msgs[$i]
@@ -313,8 +313,8 @@ function Restore-KakunaSession {
 }
 
 function Show-ResumePicker {
-    $files = Get-KakunaSessionFiles
-    if ($files.Count -eq 0) { Write-KakunaNote 'no saved sessions'; return }
+    $files = Get-SenseiSessionFiles
+    if ($files.Count -eq 0) { Write-SenseiNote 'no saved sessions'; return }
     Write-Host 'Recent sessions:'
     for ($i = 0; $i -lt $files.Count; $i++) {
         $first = ''
@@ -332,7 +332,7 @@ function Show-ResumePicker {
     }
     $pick = (Read-Host 'Resume which? [number, or Enter to skip]').Trim()
     if ($pick -match '^\d+$' -and [int]$pick -ge 1 -and [int]$pick -le $files.Count) {
-        $n = Restore-KakunaSession -Path $files[[int]$pick - 1].FullName
-        Write-KakunaNote "resumed $n messages from $($files[[int]$pick - 1].Name)"
+        $n = Restore-SenseiSession -Path $files[[int]$pick - 1].FullName
+        Write-SenseiNote "resumed $n messages from $($files[[int]$pick - 1].Name)"
     }
 }

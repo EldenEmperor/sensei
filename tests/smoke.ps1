@@ -1,12 +1,12 @@
-# smoke.ps1 — offline checks of the whole Kakuna toolchain. No API key needed.
+# smoke.ps1 — offline checks of the whole Sensei toolchain. No API key needed.
 # Run with:  pwsh -NoProfile -File tests\smoke.ps1
 
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 
 # --- minimal harness state, then dot-source everything ----------------------
-$script:KakunaRoot = $root
-$script:KakunaVersion = '0.0.0-test'
+$script:SenseiRoot = $root
+$script:SenseiVersion = '0.0.0-test'
 $script:YoloMode = $true
 $script:LocalMode = $false
 $script:PrintMode = $false
@@ -17,10 +17,10 @@ foreach ($f in 'render', 'config', 'input', 'permissions', 'hooks', 'tools', 'sk
     . (Join-Path $root "src\$f.ps1")
 }
 
-# hermetic config: never touch the user's real ~/.kakuna
-$tmp = Join-Path ([System.IO.Path]::GetTempPath()) "kakuna-smoke-$PID"
+# hermetic config: never touch the user's real ~/.sensei
+$tmp = Join-Path ([System.IO.Path]::GetTempPath()) "sensei-smoke-$PID"
 New-Item -ItemType Directory -Force -Path $tmp | Out-Null
-$script:ConfigDir = Join-Path $tmp 'kakuna-home'
+$script:ConfigDir = Join-Path $tmp 'sensei-home'
 $script:SessionDir = Join-Path $script:ConfigDir 'sessions'
 New-Item -ItemType Directory -Force -Path $script:ConfigDir, $script:SessionDir | Out-Null
 $script:Config = @{} + $script:DefaultConfig
@@ -51,8 +51,8 @@ Assert ($r -match 'Edited') 'edit_file'
 $r = Invoke-Tool 'edit_file' @{ path = "$tmp\x.txt"; old_string = 'a'; new_string = 'A' }
 Assert ($r -match 'ERROR' -and $r -match 'times') 'edit_file uniqueness enforced'
 $r = Invoke-Tool 'glob' @{ pattern = '**/*.ps1'; path = $root }
-Assert ($r -match 'tools\.ps1' -and $r -match 'kakuna\.ps1') 'glob recursive'
-$r = Invoke-Tool 'grep' @{ pattern = 'Register-KakunaTool'; path = (Join-Path $root 'src') }
+Assert ($r -match 'tools\.ps1' -and $r -match 'sensei\.ps1') 'glob recursive'
+$r = Invoke-Tool 'grep' @{ pattern = 'Register-SenseiTool'; path = (Join-Path $root 'src') }
 Assert ($r -match 'tools\.ps1' -and $r -match 'logtools\.ps1') 'grep files_with_matches'
 $r = Invoke-Tool 'run_powershell' @{ command = 'Write-Output hello; exit 3' }
 Assert ($r -match 'exit_code: 3' -and $r -match 'hello') 'run_powershell exit code + stdout'
@@ -75,7 +75,7 @@ Assert ($r -match 'OutOfMemoryException') 'log_slice time range catches crash'
 
 # ============================================================ input fallback
 Write-Host 'input:'
-Initialize-KakunaInput
+Initialize-SenseiInput
 Assert (-not $script:UsePSReadLine) 'PSReadLine fallback when stdin redirected'
 
 # ============================================================ SSE parser
@@ -98,11 +98,11 @@ Assert ($resp.choices[0].finish_reason -eq 'tool_calls') 'SSE finish_reason'
 
 # ============================================================ allowlist rules
 Write-Host 'permissions:'
-Assert (Test-KakunaAllowRule -Rule 'run_powershell(git status*)' -ToolName 'run_powershell' -PrimaryValue 'git status --short') 'rule: command prefix match'
-Assert (-not (Test-KakunaAllowRule -Rule 'run_powershell(git status*)' -ToolName 'run_powershell' -PrimaryValue 'rm -rf /')) 'rule: command mismatch'
-Assert (Test-KakunaAllowRule -Rule 'mcp__github__*' -ToolName 'mcp__github__create_issue') 'rule: wildcard tool name'
-Assert (Test-KakunaAllowRule -Rule 'write_file(C:\logs\*)' -ToolName 'write_file' -PrimaryValue 'app.log' -ResolvedValue 'C:\logs\app.log') 'rule: resolved path match'
-Assert (-not (Test-KakunaAllowRule -Rule 'write_file' -ToolName 'edit_file')) 'rule: bare name exact'
+Assert (Test-SenseiAllowRule -Rule 'run_powershell(git status*)' -ToolName 'run_powershell' -PrimaryValue 'git status --short') 'rule: command prefix match'
+Assert (-not (Test-SenseiAllowRule -Rule 'run_powershell(git status*)' -ToolName 'run_powershell' -PrimaryValue 'rm -rf /')) 'rule: command mismatch'
+Assert (Test-SenseiAllowRule -Rule 'mcp__github__*' -ToolName 'mcp__github__create_issue') 'rule: wildcard tool name'
+Assert (Test-SenseiAllowRule -Rule 'write_file(C:\logs\*)' -ToolName 'write_file' -PrimaryValue 'app.log' -ResolvedValue 'C:\logs\app.log') 'rule: resolved path match'
+Assert (-not (Test-SenseiAllowRule -Rule 'write_file' -ToolName 'edit_file')) 'rule: bare name exact'
 $script:Config.permissions = @{ allow = @('run_powershell(git *)') }
 $script:YoloMode = $false
 Assert (Request-ToolPermission -Name 'run_powershell' -Tool $script:ToolRegistry['run_powershell'] -ToolArgs @{ command = 'git log' }) 'allowlisted tool auto-allowed'
@@ -116,12 +116,12 @@ $script:Config.permissions = @{ allow = @() }
 # ============================================================ hooks
 Write-Host 'hooks:'
 $script:Config.hooks = @(@{ event = 'PreToolUse'; matcher = 'run_powershell'; command = '[Console]::Error.Write(''nope''); exit 2' })
-$h = Invoke-KakunaHooks -Event 'PreToolUse' -ToolName 'run_powershell' -ToolInput @{ command = 'x' }
+$h = Invoke-SenseiHooks -Event 'PreToolUse' -ToolName 'run_powershell' -ToolInput @{ command = 'x' }
 Assert ($h.Block -and $h.Reason -eq 'nope') 'PreToolUse exit-2 blocks with stderr reason'
-$h = Invoke-KakunaHooks -Event 'PreToolUse' -ToolName 'read_file' -ToolInput @{}
+$h = Invoke-SenseiHooks -Event 'PreToolUse' -ToolName 'read_file' -ToolInput @{}
 Assert (-not $h.Block) 'hook matcher skips non-matching tool'
 $script:Config.hooks = @(@{ event = 'PreToolUse'; matcher = ''; command = 'exit 0' })
-$h = Invoke-KakunaHooks -Event 'PreToolUse' -ToolName 'read_file' -ToolInput @{}
+$h = Invoke-SenseiHooks -Event 'PreToolUse' -ToolName 'read_file' -ToolInput @{}
 Assert (-not $h.Block) 'exit-0 hook continues'
 $script:Config.hooks = @()
 
@@ -139,12 +139,12 @@ $big = Join-Path $tmp 'big.bin'
 $r = Expand-FileReferences "check @$big"
 Assert ($r -match 'too large to inline') '@file oversize note'
 
-$cmdDir = Join-Path $tmp 'proj\.kakuna\commands'
+$cmdDir = Join-Path $tmp 'proj\.sensei\commands'
 New-Item -ItemType Directory -Force -Path $cmdDir | Out-Null
 Set-Content -Path (Join-Path $cmdDir 'greet.md') -Value 'Say hello to $ARGUMENTS please'
 Push-Location (Join-Path $tmp 'proj')
 try {
-    $p = Find-KakunaCustomCommand 'greet'
+    $p = Find-SenseiCustomCommand 'greet'
     Assert ($null -ne $p) 'custom command found'
     $content = (Get-Content -LiteralPath $p -Raw) -replace '\$ARGUMENTS', 'world'
     Assert ($content -match 'hello to world') 'custom command $ARGUMENTS substitution'
@@ -152,12 +152,12 @@ try {
 
 $script:TotalPromptTokens = 100000
 $script:TotalCompletionTokens = 10000
-$line = Get-KakunaCostLine
+$line = Get-SenseiCostLine
 Assert ($line -match '100\.0k in' -and $line -match '\$') 'cost line with estimate'
 $script:TotalPromptTokens = 0
 $script:TotalCompletionTokens = 0
 
-$html = ConvertFrom-KakunaHtml '<html><head><style>x{color:red}</style></head><body><h1>Title</h1><p>Hello <b>world</b></p><script>evil()</script></body></html>'
+$html = ConvertFrom-SenseiHtml '<html><head><style>x{color:red}</style></head><body><h1>Title</h1><p>Hello <b>world</b></p><script>evil()</script></body></html>'
 Assert ($html -match 'Title' -and $html -match 'Hello +world' -and $html -notmatch 'evil' -and $html -notmatch 'color:red') 'html stripped to text'
 
 # resume round-trip (with an orphan tool message that must be dropped)
@@ -172,29 +172,29 @@ $sessionData = @(
 )
 $sessFile = Join-Path $tmp 'sess.json'
 ConvertTo-Json -InputObject $sessionData -Depth 20 | Set-Content -Path $sessFile
-$n = Restore-KakunaSession -Path $sessFile
-Assert ($script:Messages[0].role -eq 'system' -and $script:Messages[0].content -match 'Kakuna') 'resume re-seeds fresh system prompt'
+$n = Restore-SenseiSession -Path $sessFile
+Assert ($script:Messages[0].role -eq 'system' -and $script:Messages[0].content -match 'Sensei') 'resume re-seeds fresh system prompt'
 Assert ((@($script:Messages | Where-Object { $_.role -eq 'tool' })).Count -eq 1) 'resume drops orphan tool message'
 Assert ($script:Messages[2].tool_calls[0].id -eq 'c1') 'resume preserves tool_call pair'
 Assert ($script:Messages[-1].content -eq 'question two') 'resume keeps last user message'
 $script:Messages = [System.Collections.Generic.List[object]]::new()
 $script:SessionPath = $null
 
-# KAKUNA.md memory
-Set-Content -Path (Join-Path $script:ConfigDir 'KAKUNA.md') -Value 'GLOBAL_MEMORY_MARKER'
-$sp = Get-KakunaSystemPrompt
-Assert ($sp -match 'GLOBAL_MEMORY_MARKER' -and $sp -match 'Project memory') 'KAKUNA.md loaded into system prompt'
-$sp2 = Get-KakunaSystemPrompt -Subagent
+# SENSEI.md memory
+Set-Content -Path (Join-Path $script:ConfigDir 'SENSEI.md') -Value 'GLOBAL_MEMORY_MARKER'
+$sp = Get-SenseiSystemPrompt
+Assert ($sp -match 'GLOBAL_MEMORY_MARKER' -and $sp -match 'Project memory') 'SENSEI.md loaded into system prompt'
+$sp2 = Get-SenseiSystemPrompt -Subagent
 Assert ($sp2 -match 'Subagent mode') 'subagent preamble'
 
 # ============================================================ skills
 Write-Host 'skills:'
-Push-Location $tmp   # no .kakuna\skills here, temp ConfigDir has none either
+Push-Location $tmp   # no .sensei\skills here, temp ConfigDir has none either
 try {
-    Register-KakunaSkillTool
+    Register-SenseiSkillTool
     Assert (-not $script:ToolRegistry.Contains('skill')) 'skill tool absent when no skills exist'
 
-    $skillDir = Join-Path $tmp 'proj\.kakuna\skills\demo'
+    $skillDir = Join-Path $tmp 'proj\.sensei\skills\demo'
     New-Item -ItemType Directory -Force -Path $skillDir | Out-Null
     Set-Content -Path (Join-Path $skillDir 'SKILL.md') -Value @'
 ---
@@ -205,7 +205,7 @@ Follow the DEMO_PROCEDURE_MARKER steps with $ARGUMENTS.
 '@
     Set-Content -Path (Join-Path $skillDir 'helper.txt') -Value 'helper data'
     # bare skill: no frontmatter at all
-    $bareDir = Join-Path $tmp 'proj\.kakuna\skills\bare'
+    $bareDir = Join-Path $tmp 'proj\.sensei\skills\bare'
     New-Item -ItemType Directory -Force -Path $bareDir | Out-Null
     Set-Content -Path (Join-Path $bareDir 'SKILL.md') -Value 'BARE_BODY_MARKER only'
     # user-level skill with the same name as the project one — project must win
@@ -215,14 +215,14 @@ Follow the DEMO_PROCEDURE_MARKER steps with $ARGUMENTS.
 
     Push-Location (Join-Path $tmp 'proj')
     try {
-        $skills = @(Get-KakunaSkills)
+        $skills = @(Get-SenseiSkills)
         Assert ($skills.Count -eq 2) 'skills discovered (project demo + bare)'
         $demo = $skills | Where-Object { $_.Name -eq 'demo' }
         Assert ($demo.Description -match 'demo procedure' -and $demo.Source -eq 'project') 'frontmatter parsed, project shadows user'
         $bare = $skills | Where-Object { $_.Name -eq 'bare' }
         Assert ($null -ne $bare -and $bare.Description -eq '') 'frontmatter-less skill named from folder'
 
-        Register-KakunaSkillTool
+        Register-SenseiSkillTool
         Assert ($script:ToolRegistry.Contains('skill')) 'skill tool registered'
         Assert ($script:ToolRegistry['skill'].Description -match 'demo: Demonstrates') 'skill tool description lists skills'
         $r = Invoke-Tool 'skill' @{ name = 'demo' }
@@ -230,21 +230,21 @@ Follow the DEMO_PROCEDURE_MARKER steps with $ARGUMENTS.
         Assert ($r -notmatch 'USER_COPY_MARKER') 'shadowed user skill not loaded'
         $r = Invoke-Tool 'skill' @{ name = 'nope' }
         Assert ($r -match 'ERROR' -and $r -match 'demo') 'unknown skill errors with available list'
-        $p = Get-KakunaSkillPrompt -Skill $demo -Arguments 'the log file'
+        $p = Get-SenseiSkillPrompt -Skill $demo -Arguments 'the log file'
         Assert ($p -match 'steps with the log file' -and $p -match '# Skill: demo') 'skill prompt substitutes $ARGUMENTS'
-        $p = Get-KakunaSkillPrompt -Skill $bare -Arguments 'xyz'
+        $p = Get-SenseiSkillPrompt -Skill $bare -Arguments 'xyz'
         Assert ($p -match 'User input: xyz') 'skill prompt appends args when no placeholder'
     } finally { Pop-Location }
 } finally { Pop-Location }
 Remove-Item -Recurse -Force (Join-Path $script:ConfigDir 'skills') -ErrorAction SilentlyContinue
-Register-KakunaSkillTool   # back to zero-skill state for later sections
+Register-SenseiSkillTool   # back to zero-skill state for later sections
 
 # ============================================================ v0.3 features
 Write-Host 'output styles:'
 $script:Config.output_style = 'concise'
-Assert ((Get-KakunaSystemPrompt) -match 'tersely as correctness') 'output style injected into system prompt'
+Assert ((Get-SenseiSystemPrompt) -match 'tersely as correctness') 'output style injected into system prompt'
 $script:Config.output_style = 'default'
-Assert ((Get-KakunaStyleDirective) -eq '') 'default style is empty'
+Assert ((Get-SenseiStyleDirective) -eq '') 'default style is empty'
 
 Write-Host 'multi_edit (atomic):'
 $mf = Join-Path $tmp 'multi.txt'
@@ -260,12 +260,12 @@ Assert ((Get-Content -Raw $mf) -eq "alpha`nbeta") 'multi_edit atomic: file uncha
 Write-Host 'memory up-tree + import:'
 $deep = Join-Path $tmp 'mem\a\b'
 New-Item -ItemType Directory -Force -Path $deep | Out-Null
-Set-Content -Path (Join-Path $tmp 'mem\a\KAKUNA.md') -Value 'PARENT_MEM'
+Set-Content -Path (Join-Path $tmp 'mem\a\SENSEI.md') -Value 'PARENT_MEM'
 Set-Content -Path (Join-Path $deep 'shared.md') -Value 'IMPORTED_MEM'
-Set-Content -Path (Join-Path $deep 'KAKUNA.md') -Value "CHILD_MEM`n@shared.md"
+Set-Content -Path (Join-Path $deep 'SENSEI.md') -Value "CHILD_MEM`n@shared.md"
 Push-Location $deep
 try {
-    $mem = Get-KakunaMemory
+    $mem = Get-SenseiMemory
     $joined = ($mem | ForEach-Object { $_.Content }) -join "`n"
     Assert ($joined -match 'PARENT_MEM' -and $joined -match 'CHILD_MEM') 'memory walks up-tree'
     Assert ($joined -match 'IMPORTED_MEM') 'memory resolves @import'
@@ -301,27 +301,27 @@ Assert ($r -match 'COUNT SPIKES' -and $r -match 'Payment') 'log_baseline diff fl
 Write-Host 'log_search (stubbed embeddings):'
 $memLog = Join-Path $tmp 'mem.log'
 Set-Content -Path $memLog -Value "2026-01-01 00:00:01 [ERROR] OutOfMemoryException heap exhausted`n2026-01-01 00:00:02 [ERROR] OutOfMemoryException heap exhausted`n2026-01-01 00:00:03 [ERROR] OutOfMemoryException heap exhausted`n2026-01-01 00:00:04 [ERROR] Disk write failed no space left`n2026-01-01 00:00:05 [ERROR] Disk write failed no space left"
-function Get-KakunaEmbeddings { param([string[]]$Inputs)
+function Get-SenseiEmbeddings { param([string[]]$Inputs)
     return @($Inputs | ForEach-Object { if ($_ -match '(?i)memory|heap') { ,@(1.0, 0.0) } else { ,@(0.0, 1.0) } })
 }
 $script:LocalMode = $true
 $r = Invoke-Tool 'log_search' @{ path = $memLog; query = 'memory pressure'; top = 2 }
 $script:LocalMode = $false
 Assert ($r.IndexOf('OutOfMemory') -lt $r.IndexOf('Disk')) 'log_search ranks by semantic similarity'
-Assert ((Get-KakunaCosine @(1.0, 0.0) @(1.0, 0.0)) -eq 1.0 -and (Get-KakunaCosine @(1.0, 0.0) @(0.0, 1.0)) -eq 0.0) 'cosine similarity'
+Assert ((Get-SenseiCosine @(1.0, 0.0) @(1.0, 0.0)) -eq 1.0 -and (Get-SenseiCosine @(1.0, 0.0) @(0.0, 1.0)) -eq 0.0) 'cosine similarity'
 
 Write-Host 'plan mode:'
 $script:PlanMode = $true
 Assert (-not (Request-ToolPermission -Name 'write_file' -Tool $script:ToolRegistry['write_file'] -ToolArgs @{ path = 'x' })) 'plan mode blocks write tools'
 Assert (Request-ToolPermission -Name 'read_file' -Tool $script:ToolRegistry['read_file'] -ToolArgs @{ path = 'x' }) 'plan mode allows read-only tools'
-Assert ((Get-KakunaSystemPrompt) -match 'Plan mode \(ACTIVE\)') 'plan mode note in system prompt'
+Assert ((Get-SenseiSystemPrompt) -match 'Plan mode \(ACTIVE\)') 'plan mode note in system prompt'
 $script:PlanMode = $false
 
 # ============================================================ background tasks
 
 # ============================================================ background tasks
 Write-Host 'background tasks:'
-$r = Start-KakunaBackgroundTask -Command '1..3 | ForEach-Object { "tick $_" }; exit 7'
+$r = Start-SenseiBackgroundTask -Command '1..3 | ForEach-Object { "tick $_" }; exit 7'
 Assert ($r -match 'Started background task bg\d') 'bg task starts and returns immediately'
 $bgId = if ($r -match '(bg\d+)') { $Matches[1] } else { '' }
 $T = $script:BackgroundTasks[$bgId]
@@ -424,20 +424,20 @@ Write-Host 'mcp (mock server):'
 $script:Config.mcpServers = @{
     mock = @{ command = 'pwsh'; args = @('-NoProfile', '-File', (Join-Path $PSScriptRoot 'mock-mcp-server.ps1')) }
 }
-Start-KakunaMcpServers
+Start-SenseiMcpServers
 $mock = $script:McpServers['mock']
 Assert ($mock -and $mock.Status -eq 'connected') 'mcp handshake connects'
 Assert ($script:ToolRegistry.Contains('mcp__mock__echo')) 'mcp tool registered'
-$r = Invoke-McpToolCall -ServerName 'mock' -ToolName 'echo' -Arguments @{ text = 'hi kakuna' }
-Assert ($r -eq 'hi kakuna') 'mcp tools/call round-trip (despite interleaved notification)'
+$r = Invoke-McpToolCall -ServerName 'mock' -ToolName 'echo' -Arguments @{ text = 'hi sensei' }
+Assert ($r -eq 'hi sensei') 'mcp tools/call round-trip (despite interleaved notification)'
 $fakeCall = @{ id = 'x1'; function = @{ name = 'mcp__mock__echo'; arguments = '{"text":"via dispatch"}' } }
-$r = Invoke-KakunaToolCall -ToolCall $fakeCall -Depth 0
+$r = Invoke-SenseiToolCall -ToolCall $fakeCall -Depth 0
 Assert ($r -eq 'via dispatch') 'mcp dispatch through agent tool-call path'
 $mockPid = $mock.Process.Id
-Stop-KakunaMcpServers
+Stop-SenseiMcpServers
 Start-Sleep -Milliseconds 500
 Assert ($null -eq (Get-Process -Id $mockPid -ErrorAction SilentlyContinue)) 'mcp clean shutdown, no zombie'
-Assert (Test-KakunaAllowRule -Rule 'mcp__mock__*' -ToolName 'mcp__mock__echo') 'mcp allowlist wildcard applies'
+Assert (Test-SenseiAllowRule -Rule 'mcp__mock__*' -ToolName 'mcp__mock__echo') 'mcp allowlist wildcard applies'
 
 # ============================================================ done
 Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue

@@ -1,4 +1,4 @@
-# logtools.ps1 — log_slice and log_stats, Kakuna's differentiating tools.
+# logtools.ps1 — log_slice and log_stats, Sensei's differentiating tools.
 # Both stream; neither ever loads a whole log file into memory.
 
 $script:TsRegexes = @(
@@ -35,7 +35,7 @@ function Get-LogTemplate {
 
 # --- log_slice -------------------------------------------------------------
 
-Register-KakunaTool -Name 'log_slice' -ReadOnly $true `
+Register-SenseiTool -Name 'log_slice' -ReadOnly $true `
     -Description 'Efficiently read part of a (possibly huge) log file with absolute line numbers. Provide exactly one of: tail=N, head=N, from_line/to_line, or from_time/to_time. Never loads the whole file.' `
     -Parameters @{
         type       = 'object'
@@ -51,7 +51,7 @@ Register-KakunaTool -Name 'log_slice' -ReadOnly $true `
         required   = @('path')
     } -Handler {
         param($a)
-        $path = Resolve-KakunaPath $a.path
+        $path = Resolve-SenseiPath $a.path
         if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { return "ERROR: file not found: $path" }
         $maxLines = 2000
         $sb = [System.Text.StringBuilder]::new()
@@ -152,7 +152,7 @@ Register-KakunaTool -Name 'log_slice' -ReadOnly $true `
 
 # --- log_stats -------------------------------------------------------------
 
-Register-KakunaTool -Name 'log_stats' -ReadOnly $true `
+Register-SenseiTool -Name 'log_stats' -ReadOnly $true `
     -Description 'Cheap single-pass analysis of a log file: line/byte totals, log-level counts, time range, error frequency over time buckets, and the most common ERROR/WARN/FATAL message templates. ALWAYS call this before reading a log file.' `
     -Parameters @{
         type       = 'object'
@@ -160,7 +160,7 @@ Register-KakunaTool -Name 'log_stats' -ReadOnly $true `
         required   = @('path')
     } -Handler {
         param($a)
-        $path = Resolve-KakunaPath $a.path
+        $path = Resolve-SenseiPath $a.path
         if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { return "ERROR: file not found: $path" }
         $levelRx = [regex]'(?i)\b(FATAL|ERROR|WARN(?:ING)?|INFO|DEBUG|TRACE)\b'
         $levels = [ordered]@{ FATAL = 0; ERROR = 0; WARN = 0; INFO = 0; DEBUG = 0; TRACE = 0 }
@@ -266,7 +266,7 @@ function Close-LogCursors { param($Cursors) foreach ($c in $Cursors) { try { $c.
 
 # --- log_timeline ----------------------------------------------------------
 
-Register-KakunaTool -Name 'log_timeline' -ReadOnly $true `
+Register-SenseiTool -Name 'log_timeline' -ReadOnly $true `
     -Description 'Merge 2+ log files into one timestamp-ordered view, each line tagged with its source file. Optionally bound to from_time/to_time. The tool for "what did every service say around the moment of the crash?"' `
     -Parameters @{
         type       = 'object'
@@ -278,7 +278,7 @@ Register-KakunaTool -Name 'log_timeline' -ReadOnly $true `
         required   = @('paths')
     } -Handler {
         param($a)
-        $paths = @($a.paths | ForEach-Object { Resolve-KakunaPath $_ })
+        $paths = @($a.paths | ForEach-Object { Resolve-SenseiPath $_ })
         $missing = @($paths | Where-Object { -not (Test-Path -LiteralPath $_ -PathType Leaf) })
         if ($missing.Count -gt 0) { return "ERROR: file(s) not found: $($missing -join ', ')" }
         if ($paths.Count -lt 2) { return 'ERROR: log_timeline needs at least 2 paths' }
@@ -314,7 +314,7 @@ Register-KakunaTool -Name 'log_timeline' -ReadOnly $true `
 
 # --- log_trace -------------------------------------------------------------
 
-Register-KakunaTool -Name 'log_trace' -ReadOnly $true `
+Register-SenseiTool -Name 'log_trace' -ReadOnly $true `
     -Description 'Follow a correlation/request/trace id across one or more log files: every matching line, in timestamp order, tagged with source:line.' `
     -Parameters @{
         type       = 'object'
@@ -327,7 +327,7 @@ Register-KakunaTool -Name 'log_trace' -ReadOnly $true `
         param($a)
         $id = [string]$a.id
         if (-not $id) { return 'ERROR: id is required' }
-        $paths = if ($a.paths) { @($a.paths | ForEach-Object { Resolve-KakunaPath $_ }) }
+        $paths = if ($a.paths) { @($a.paths | ForEach-Object { Resolve-SenseiPath $_ }) }
                  else { @(Get-ChildItem -LiteralPath (Get-Location).Path -Filter '*.log' -File | ForEach-Object FullName) }
         if ($paths.Count -eq 0) { return 'ERROR: no files to scan (pass paths, or run where *.log files exist)' }
         $hits = [System.Collections.Generic.List[object]]::new()
@@ -390,7 +390,7 @@ function Get-LogBaselineData {
     }
 }
 
-Register-KakunaTool -Name 'log_baseline' -ReadOnly $true `
+Register-SenseiTool -Name 'log_baseline' -ReadOnly $true `
     -Description "Capture a log's profile as a named baseline (action=save), or compare a log against a saved baseline (action=diff) to surface NEW error templates and count spikes. Answers 'what changed since the last good run?'" `
     -Parameters @{
         type       = 'object'
@@ -410,7 +410,7 @@ Register-KakunaTool -Name 'log_baseline' -ReadOnly $true `
             if ($files.Count -eq 0) { return 'no baselines saved' }
             return "baselines: " + (($files | ForEach-Object { $_.BaseName }) -join ', ')
         }
-        $path = Resolve-KakunaPath ([string]$a.path)
+        $path = Resolve-SenseiPath ([string]$a.path)
         if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { return "ERROR: file not found: $path" }
         $name = if ($a.name) { [string]$a.name } else { (Split-Path -Leaf $path) -replace '[^\w.-]', '_' }
         $bpath = Join-Path $dir "$name.json"
@@ -450,7 +450,7 @@ Register-KakunaTool -Name 'log_baseline' -ReadOnly $true `
 
 # --- log_search (semantic; local Ollama embeddings) ------------------------
 
-function Get-KakunaEmbeddings {
+function Get-SenseiEmbeddings {
     # Returns an array of float[] vectors for the given input strings, via the
     # OpenAI-compatible /embeddings endpoint (Ollama). Local mode only.
     param([string[]]$Inputs)
@@ -462,7 +462,7 @@ function Get-KakunaEmbeddings {
     return @($parsed.data | ForEach-Object { ,@($_.embedding) })
 }
 
-function Get-KakunaCosine {
+function Get-SenseiCosine {
     param($A, $B)
     $dot = 0.0; $na = 0.0; $nb = 0.0
     for ($i = 0; $i -lt $A.Count; $i++) {
@@ -472,7 +472,7 @@ function Get-KakunaCosine {
     return $dot / ([Math]::Sqrt($na) * [Math]::Sqrt($nb))
 }
 
-Register-KakunaTool -Name 'log_search' -ReadOnly $true `
+Register-SenseiTool -Name 'log_search' -ReadOnly $true `
     -Description 'Semantic search over a log by MEANING (not regex): ranks the log''s distinct error/warn templates by similarity to a natural-language query, e.g. "memory pressure" or "auth failures". Local mode only (uses your Ollama embedding model).' `
     -Parameters @{
         type       = 'object'
@@ -484,8 +484,8 @@ Register-KakunaTool -Name 'log_search' -ReadOnly $true `
         required   = @('path', 'query')
     } -Handler {
         param($a)
-        if (-not $script:LocalMode) { return 'ERROR: log_search needs local embeddings — start kakuna with --local (Ollama + an embedding model).' }
-        $path = Resolve-KakunaPath ([string]$a.path)
+        if (-not $script:LocalMode) { return 'ERROR: log_search needs local embeddings — start sensei with --local (Ollama + an embedding model).' }
+        $path = Resolve-SenseiPath ([string]$a.path)
         if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { return "ERROR: file not found: $path" }
         $top = [Math]::Max(1, [int]($a.top ?? 10))
         # distinct error/warn templates with counts (one streaming pass)
@@ -510,16 +510,16 @@ Register-KakunaTool -Name 'log_search' -ReadOnly $true `
         }
         try {
             if (-not $vectors) {
-                $vectors = Get-KakunaEmbeddings -Inputs $templates
+                $vectors = Get-SenseiEmbeddings -Inputs $templates
                 ConvertTo-Json -InputObject @{ templates = $templates; vectors = $vectors } -Depth 6 |
                     Set-Content -LiteralPath $cacheFile -Encoding utf8NoBOM
             }
-            $qVec = (Get-KakunaEmbeddings -Inputs @([string]$a.query))[0]
+            $qVec = (Get-SenseiEmbeddings -Inputs @([string]$a.query))[0]
         } catch {
             return "ERROR: $($_.Exception.Message)`nIs Ollama running with '$($script:Config.embed_model)' pulled? (ollama pull $($script:Config.embed_model))"
         }
         $ranked = for ($i = 0; $i -lt $templates.Count; $i++) {
-            @{ Template = $templates[$i]; Score = (Get-KakunaCosine $qVec $vectors[$i]); Count = $data.templates[$templates[$i]] }
+            @{ Template = $templates[$i]; Score = (Get-SenseiCosine $qVec $vectors[$i]); Count = $data.templates[$templates[$i]] }
         }
         $sb = [System.Text.StringBuilder]::new()
         [void]$sb.AppendLine("[log_search '$($a.query)' — top $top of $($templates.Count) templates]")

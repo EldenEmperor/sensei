@@ -2,7 +2,7 @@
 
 $script:UsePSReadLine = $false
 
-function Initialize-KakunaInput {
+function Initialize-SenseiInput {
     if ([Console]::IsInputRedirected -or $script:PrintMode) { return }
     try {
         Import-Module PSReadLine -ErrorAction Stop
@@ -15,28 +15,28 @@ function Initialize-KakunaInput {
         }
         $script:UsePSReadLine = $true
     } catch {
-        Write-KakunaNote "PSReadLine unavailable ($($_.Exception.Message)); using basic input"
+        Write-SenseiNote "PSReadLine unavailable ($($_.Exception.Message)); using basic input"
     }
 }
 
 # PSReadLine calls the host's prompt function when it redraws (e.g. on resize) —
-# keep it identical to the prompt Read-KakunaInput prints.
-function prompt { "$($script:Theme.Accent)kakuna ❯ $($script:Theme.Reset)" }
+# keep it identical to the prompt Read-SenseiInput prints.
+function prompt { "$($script:Theme.Accent)sensei ❯ $($script:Theme.Reset)" }
 
-function Read-KakunaInput {
-    Write-Host -NoNewline "$($script:Theme.Accent)kakuna ❯ $($script:Theme.Reset)"
+function Read-SenseiInput {
+    Write-Host -NoNewline "$($script:Theme.Accent)sensei ❯ $($script:Theme.Reset)"
     if ($script:UsePSReadLine) {
         try {
             return [Microsoft.PowerShell.PSConsoleReadLine]::ReadLine($Host.Runspace, $ExecutionContext, $true)
         } catch {
             $script:UsePSReadLine = $false
-            Write-KakunaNote 'PSReadLine failed; falling back to basic input'
+            Write-SenseiNote 'PSReadLine failed; falling back to basic input'
         }
     }
     return [Console]::ReadLine()
 }
 
-function Wait-KakunaTask {
+function Wait-SenseiTask {
     # Poll a .NET Task to completion. Ctrl+C / Esc → cancel the CTS and throw
     # OperationCanceledException. A faulted task counts as done (the caller's
     # GetResult() surfaces its real exception). $OnTick runs every ~60ms.
@@ -89,7 +89,7 @@ function Invoke-CancellableWait {
         $tick = if ($canSpin) {
             { Write-Host -NoNewline "`r$($script:Theme.Accent)$($frames[$state.I % $frames.Count]) $Label$($script:Theme.Reset)"; $state.I++ }
         } else { $null }
-        Wait-KakunaTask -Task $Task -Cts $Cts -OnTick $tick
+        Wait-SenseiTask -Task $Task -Cts $Cts -OnTick $tick
     } finally {
         if ($canSpin) { Write-Host -NoNewline ("`r" + (' ' * ($Label.Length + 4)) + "`r") }
         if ($canKeys) { [Console]::TreatControlCAsInput = $prev }

@@ -1,7 +1,7 @@
 # render.ps1 — theme, banner, markdown rendering (streaming-capable), diffs, todos.
 
 $script:Theme = @{
-    Accent = $PSStyle.Foreground.FromRgb(0xF8D030)   # Kakuna yellow
+    Accent = $PSStyle.Foreground.FromRgb(0xE0533D)   # Sensei vermilion (torii red)
     Dim    = $PSStyle.Foreground.BrightBlack
     Bold   = $PSStyle.Bold
     Err    = $PSStyle.Foreground.BrightRed
@@ -20,11 +20,11 @@ function Protect-TerminalText {
     return $Text -replace "`e", [string][char]0x241B
 }
 
-function Write-KakunaError { param([string]$Text) Write-Host "$($script:Theme.Err)✗ $(Protect-TerminalText $Text)$($script:Theme.Reset)" }
-function Write-KakunaNote  { param([string]$Text) Write-Host "$($script:Theme.Dim)$(Protect-TerminalText $Text)$($script:Theme.Reset)" }
+function Write-SenseiError { param([string]$Text) Write-Host "$($script:Theme.Err)✗ $(Protect-TerminalText $Text)$($script:Theme.Reset)" }
+function Write-SenseiNote  { param([string]$Text) Write-Host "$($script:Theme.Dim)$(Protect-TerminalText $Text)$($script:Theme.Reset)" }
 
-function Show-KakunaBanner {
-    $bannerPath = Join-Path $script:KakunaRoot 'assets\banner.txt'
+function Show-SenseiBanner {
+    $bannerPath = Join-Path $script:SenseiRoot 'assets\banner.txt'
     if (Test-Path -LiteralPath $bannerPath) {
         foreach ($line in Get-Content -LiteralPath $bannerPath -Encoding utf8) {
             Write-Host "$($script:Theme.Accent)$line$($script:Theme.Reset)"
@@ -32,7 +32,7 @@ function Show-KakunaBanner {
     }
     $modelLabel = Get-ActiveModel
     if ($script:LocalMode) { $modelLabel += ' (local · ollama)' }
-    Write-Host "$($script:Theme.Bold)$($script:Theme.Accent)  kakuna$($script:Theme.Reset)$($script:Theme.Dim) v$($script:KakunaVersion) · log-debugging agent · model: $modelLabel$($script:Theme.Reset)"
+    Write-Host "$($script:Theme.Bold)$($script:Theme.Accent)  sensei$($script:Theme.Reset)$($script:Theme.Dim) v$($script:SenseiVersion) · log-debugging agent · model: $modelLabel$($script:Theme.Reset)"
     Write-Host "$($script:Theme.Dim)  ask about a log file, or /help for commands$($script:Theme.Reset)"
     Write-Host ''
 }
@@ -119,7 +119,7 @@ function Complete-StreamRender {
     }
 }
 
-function Write-KakunaMarkdown {
+function Write-SenseiMarkdown {
     param([string]$Text)
     if (-not $Text) { return }
     $Text = [regex]::Replace($Text, '(?s)<think>.*?</think>\s*', '')
@@ -130,7 +130,7 @@ function Write-KakunaMarkdown {
 
 # --- diff preview -----------------------------------------------------------
 
-function Write-KakunaDiff {
+function Write-SenseiDiff {
     param([string]$Name, [hashtable]$ToolArgs)
     $t = $script:Theme
     try {
@@ -138,11 +138,11 @@ function Write-KakunaDiff {
             $old = @(([string]$ToolArgs.old_string) -split "`r?`n")
             $new = @(([string]$ToolArgs.new_string) -split "`r?`n")
             foreach ($l in ($old | Select-Object -First 20)) { Write-Host "  $($t.Red)- $(Protect-TerminalText $l)$($t.Reset)" }
-            if ($old.Count -gt 20) { Write-KakunaNote "  … $($old.Count - 20) more removed lines" }
+            if ($old.Count -gt 20) { Write-SenseiNote "  … $($old.Count - 20) more removed lines" }
             foreach ($l in ($new | Select-Object -First 20)) { Write-Host "  $($t.Green)+ $(Protect-TerminalText $l)$($t.Reset)" }
-            if ($new.Count -gt 20) { Write-KakunaNote "  … $($new.Count - 20) more added lines" }
+            if ($new.Count -gt 20) { Write-SenseiNote "  … $($new.Count - 20) more added lines" }
         } elseif ($Name -eq 'write_file') {
-            $path = Resolve-KakunaPath ([string]$ToolArgs.path)
+            $path = Resolve-SenseiPath ([string]$ToolArgs.path)
             $newLines = @(([string]$ToolArgs.content) -split "`r?`n")
             if (Test-Path -LiteralPath $path -PathType Leaf) {
                 $oldLines = @(Get-Content -LiteralPath $path)
@@ -153,23 +153,23 @@ function Write-KakunaDiff {
                     if ($d.SideIndicator -eq '<=') { Write-Host "  $($t.Red)- $(Protect-TerminalText $d.InputObject)$($t.Reset)" }
                     else { Write-Host "  $($t.Green)+ $(Protect-TerminalText $d.InputObject)$($t.Reset)" }
                 }
-                Write-KakunaNote "  (overwrite: -$minus/+$plus changed lines vs the existing file)"
+                Write-SenseiNote "  (overwrite: -$minus/+$plus changed lines vs the existing file)"
             } else {
                 foreach ($l in ($newLines | Select-Object -First 20)) { Write-Host "  $($t.Green)+ $(Protect-TerminalText $l)$($t.Reset)" }
-                Write-KakunaNote "  (new file, $($newLines.Count) lines)"
+                Write-SenseiNote "  (new file, $($newLines.Count) lines)"
             }
         }
     } catch {
-        Write-KakunaNote "  (diff preview unavailable: $($_.Exception.Message))"
+        Write-SenseiNote "  (diff preview unavailable: $($_.Exception.Message))"
     }
 }
 
 # --- todo checklist ---------------------------------------------------------
 
-function Write-KakunaTodos {
+function Write-SenseiTodos {
     $t = $script:Theme
     if (-not $script:Todos -or @($script:Todos).Count -eq 0) {
-        Write-KakunaNote '  (no todos)'
+        Write-SenseiNote '  (no todos)'
         return
     }
     foreach ($td in @($script:Todos)) {

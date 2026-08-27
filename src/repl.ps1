@@ -1,9 +1,9 @@
 # repl.ps1 — the interactive loop, built-in slash commands, custom commands.
 
-function Start-KakunaRepl {
+function Start-SenseiRepl {
     while ($true) {
         Show-FinishedTaskNotes
-        $line = Read-KakunaInput
+        $line = Read-SenseiInput
         if ($null -eq $line) { break }   # EOF
         $line = $line.Trim()
         if (-not $line) { continue }
@@ -14,16 +14,16 @@ function Start-KakunaRepl {
         try {
             Invoke-AgentTurn $line
         } catch [System.OperationCanceledException] {
-            Write-KakunaNote '(aborted)'
+            Write-SenseiNote '(aborted)'
         }
         Write-Host ''
     }
 }
 
-function Find-KakunaCustomCommand {
+function Find-SenseiCustomCommand {
     param([string]$Name)
     $candidates = @(
-        (Join-Path (Get-Location).Path ".kakuna\commands\$Name.md")
+        (Join-Path (Get-Location).Path ".sensei\commands\$Name.md")
         (Join-Path $script:ConfigDir "commands\$Name.md")
     )
     foreach ($p in $candidates) {
@@ -32,9 +32,9 @@ function Find-KakunaCustomCommand {
     return $null
 }
 
-function Get-KakunaCustomCommandNames {
+function Get-SenseiCustomCommandNames {
     $names = @()
-    foreach ($dir in @((Join-Path (Get-Location).Path '.kakuna\commands'), (Join-Path $script:ConfigDir 'commands'))) {
+    foreach ($dir in @((Join-Path (Get-Location).Path '.sensei\commands'), (Join-Path $script:ConfigDir 'commands'))) {
         if (Test-Path -LiteralPath $dir) {
             $names += @(Get-ChildItem -LiteralPath $dir -Filter '*.md' | ForEach-Object { $_.BaseName })
         }
@@ -64,61 +64,61 @@ function Invoke-SlashCommand {
             Write-Host '  /tasks           list background tasks'
             Write-Host '  /todos           show the current checklist'
             Write-Host '  /cost            token usage and estimated cost'
-            Write-Host '  /memory          show loaded KAKUNA.md memory files'
-            Write-Host '  /init            explore this directory and write a KAKUNA.md'
+            Write-Host '  /memory          show loaded SENSEI.md memory files'
+            Write-Host '  /init            explore this directory and write a SENSEI.md'
             Write-Host '  /resume          pick a previous session to continue'
             Write-Host '  /exit            quit (also /quit, or Ctrl+D)'
-            $custom = Get-KakunaCustomCommandNames
+            $custom = Get-SenseiCustomCommandNames
             if ($custom.Count -gt 0) {
                 Write-Host "  custom: $(($custom | ForEach-Object { "/$_" }) -join ' ')"
             }
-            $skillNames = @(Get-KakunaSkills | ForEach-Object { $_.Name })
+            $skillNames = @(Get-SenseiSkills | ForEach-Object { $_.Name })
             if ($skillNames.Count -gt 0) {
                 Write-Host "  skills: $(($skillNames | ForEach-Object { "/$_" }) -join ' ')"
             }
         }
         '/clear' {
-            Save-KakunaSession
+            Save-SenseiSession
             $script:Messages.Clear()
-            $script:Messages.Add(@{ role = 'system'; content = (Get-KakunaSystemPrompt) })
+            $script:Messages.Add(@{ role = 'system'; content = (Get-SenseiSystemPrompt) })
             $script:Todos = @()
             $script:TotalPromptTokens = 0
             $script:TotalCompletionTokens = 0
             $script:SessionPath = $null
-            Write-KakunaNote 'conversation cleared'
+            Write-SenseiNote 'conversation cleared'
         }
         '/compact' {
             try {
                 Invoke-ContextCompaction -Messages $script:Messages -Force
             } catch [System.OperationCanceledException] {
-                Write-KakunaNote '(aborted)'
+                Write-SenseiNote '(aborted)'
             }
         }
         '/plan' {
             $script:PlanMode = -not $script:PlanMode
-            if ($script:PlanMode) { Write-KakunaNote 'plan mode ON — read-only; the agent will propose a plan for you to approve' }
-            else { Write-KakunaNote 'plan mode OFF — the agent can edit and run commands again' }
+            if ($script:PlanMode) { Write-SenseiNote 'plan mode ON — read-only; the agent will propose a plan for you to approve' }
+            else { Write-SenseiNote 'plan mode OFF — the agent can edit and run commands again' }
         }
         '/style' {
             if ($arg) {
                 if ($script:OutputStyles.ContainsKey($arg)) {
                     $script:Config.output_style = $arg
-                    Save-KakunaConfig
-                    Write-KakunaNote "response style set to $arg"
+                    Save-SenseiConfig
+                    Write-SenseiNote "response style set to $arg"
                 } else {
-                    Write-KakunaNote "unknown style '$arg' — choices: $(@($script:OutputStyles.Keys) -join ', ')"
+                    Write-SenseiNote "unknown style '$arg' — choices: $(@($script:OutputStyles.Keys) -join ', ')"
                 }
             } else {
-                Write-KakunaNote "current style: $($script:Config.output_style) | choices: $(@($script:OutputStyles.Keys) -join ', ')"
+                Write-SenseiNote "current style: $($script:Config.output_style) | choices: $(@($script:OutputStyles.Keys) -join ', ')"
             }
         }
         '/model' {
             $modeTag = if ($script:LocalMode) { ' (local · ollama)' } else { '' }
             if ($arg) {
                 Set-ActiveModel $arg
-                Write-KakunaNote "model set to $(Get-ActiveModel)$modeTag"
+                Write-SenseiNote "model set to $(Get-ActiveModel)$modeTag"
             } else {
-                Write-KakunaNote "current model: $(Get-ActiveModel)$modeTag"
+                Write-SenseiNote "current model: $(Get-ActiveModel)$modeTag"
             }
         }
         '/config' {
@@ -130,23 +130,23 @@ function Invoke-SlashCommand {
                          elseif ($script:Config.api_key) { 'config.json' }
                          else { 'none' }
             $mode = if ($script:LocalMode) { "local · ollama at $($script:Config.local_base_url)" } else { 'openai' }
-            Write-KakunaNote "mode: $mode | api key source: $keySource | config file: $script:ConfigPath"
-            if ($script:ProjectConfig.Count -gt 0) { Write-KakunaNote "project config: $(Join-Path (Get-Location).Path '.kakuna.json')" }
+            Write-SenseiNote "mode: $mode | api key source: $keySource | config file: $script:ConfigPath"
+            if ($script:ProjectConfig.Count -gt 0) { Write-SenseiNote "project config: $(Join-Path (Get-Location).Path '.sensei.json')" }
         }
         '/mcp' { Show-McpStatus }
         '/permissions' {
-            $rules = Get-KakunaAllowRules
+            $rules = Get-SenseiAllowRules
             if ($rules.Count -eq 0) {
-                Write-KakunaNote 'no allowlist rules — add "permissions": {"allow": ["run_powershell(git *)"]} to config, or answer [p] at a permission prompt'
+                Write-SenseiNote 'no allowlist rules — add "permissions": {"allow": ["run_powershell(git *)"]} to config, or answer [p] at a permission prompt'
             } else {
                 foreach ($r in $rules) { Write-Host "  $($r.Rule)  $($script:Theme.Dim)($($r.Source))$($script:Theme.Reset)" }
             }
             if ($script:SessionAllowed.Count -gt 0) {
-                Write-KakunaNote "session-allowed: $(@($script:SessionAllowed) -join ', ')"
+                Write-SenseiNote "session-allowed: $(@($script:SessionAllowed) -join ', ')"
             }
         }
         '/tasks' {
-            if ($script:BackgroundTasks.Count -eq 0) { Write-KakunaNote 'no background tasks' }
+            if ($script:BackgroundTasks.Count -eq 0) { Write-SenseiNote 'no background tasks' }
             foreach ($T in $script:BackgroundTasks.Values) {
                 $status = if ($T.Process.HasExited) { "exited $($T.Process.ExitCode)" } else { 'running' }
                 $runtime = [int]((Get-Date) - $T.Started).TotalSeconds
@@ -154,9 +154,9 @@ function Invoke-SlashCommand {
             }
         }
         '/skills' {
-            $skills = @(Get-KakunaSkills)
+            $skills = @(Get-SenseiSkills)
             if ($skills.Count -eq 0) {
-                Write-KakunaNote 'no skills — create one with /newskill <name> [purpose], or drop a SKILL.md in .kakuna\skills\<name>\ (project) or ~/.kakuna/skills/<name>/ (global)'
+                Write-SenseiNote 'no skills — create one with /newskill <name> [purpose], or drop a SKILL.md in .sensei\skills\<name>\ (project) or ~/.sensei/skills/<name>/ (global)'
             }
             foreach ($s in $skills) {
                 Write-Host "  /$($s.Name) — $($s.Description) $($script:Theme.Dim)($($s.Source))$($script:Theme.Reset)"
@@ -164,51 +164,51 @@ function Invoke-SlashCommand {
         }
         '/newskill' {
             if (-not $arg) {
-                Write-KakunaNote 'usage: /newskill <name> [what it should do]'
+                Write-SenseiNote 'usage: /newskill <name> [what it should do]'
             } else {
                 $nsParts = $arg.Split(' ', 2)
                 $nsName = $nsParts[0]
                 $nsDesc = if ($nsParts.Count -gt 1 -and $nsParts[1].Trim()) { $nsParts[1].Trim() } else { 'decide from the name' }
                 $prompt = $script:NewSkillPrompt -replace '<NAME>', $nsName -replace '<DESC>', $nsDesc
                 try { Invoke-AgentTurn $prompt }
-                catch [System.OperationCanceledException] { Write-KakunaNote '(aborted)' }
+                catch [System.OperationCanceledException] { Write-SenseiNote '(aborted)' }
             }
         }
-        '/todos' { Write-KakunaTodos }
+        '/todos' { Write-SenseiTodos }
         '/cost' {
-            Write-KakunaNote (Get-KakunaCostLine)
-            Write-KakunaNote '(cost is an estimate from a static price table; override via "prices" in config)'
+            Write-SenseiNote (Get-SenseiCostLine)
+            Write-SenseiNote '(cost is an estimate from a static price table; override via "prices" in config)'
         }
         '/memory' {
-            $mem = Get-KakunaMemory
-            if ($mem.Count -eq 0) { Write-KakunaNote 'no KAKUNA.md loaded — /init creates one for this directory' }
+            $mem = Get-SenseiMemory
+            if ($mem.Count -eq 0) { Write-SenseiNote 'no SENSEI.md loaded — /init creates one for this directory' }
             foreach ($m in $mem) { Write-Host "  $($m.Path)  $($script:Theme.Dim)($($m.Content.Length) chars)$($script:Theme.Reset)" }
         }
         '/init' {
             try { Invoke-AgentTurn $script:InitPrompt }
-            catch [System.OperationCanceledException] { Write-KakunaNote '(aborted)' }
+            catch [System.OperationCanceledException] { Write-SenseiNote '(aborted)' }
         }
         '/resume' {
-            Save-KakunaSession
+            Save-SenseiSession
             Show-ResumePicker
         }
         '/exit' { return $false }
         '/quit' { return $false }
         default {
             $name = $cmd.TrimStart('/')
-            $path = Find-KakunaCustomCommand $name
-            $skill = if (-not $path) { @(Get-KakunaSkills) | Where-Object { $_.Name -eq $name } | Select-Object -First 1 } else { $null }
+            $path = Find-SenseiCustomCommand $name
+            $skill = if (-not $path) { @(Get-SenseiSkills) | Where-Object { $_.Name -eq $name } | Select-Object -First 1 } else { $null }
             if ($path) {
                 $prompt = (Get-Content -LiteralPath $path -Raw) -replace '\$ARGUMENTS', $arg
-                Write-KakunaNote "(custom command: $path)"
+                Write-SenseiNote "(custom command: $path)"
                 try { Invoke-AgentTurn $prompt }
-                catch [System.OperationCanceledException] { Write-KakunaNote '(aborted)' }
+                catch [System.OperationCanceledException] { Write-SenseiNote '(aborted)' }
             } elseif ($skill) {
-                Write-KakunaNote "(skill: $($skill.Path))"
-                try { Invoke-AgentTurn (Get-KakunaSkillPrompt -Skill $skill -Arguments $arg) }
-                catch [System.OperationCanceledException] { Write-KakunaNote '(aborted)' }
+                Write-SenseiNote "(skill: $($skill.Path))"
+                try { Invoke-AgentTurn (Get-SenseiSkillPrompt -Skill $skill -Arguments $arg) }
+                catch [System.OperationCanceledException] { Write-SenseiNote '(aborted)' }
             } else {
-                Write-KakunaNote "unknown command $($parts[0]) — try /help"
+                Write-SenseiNote "unknown command $($parts[0]) — try /help"
             }
         }
     }

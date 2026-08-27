@@ -4,7 +4,7 @@
 $script:HttpClient = $null
 $script:OpenAIBase = 'https://api.openai.com/v1'
 
-function Get-KakunaHttpClient {
+function Get-SenseiHttpClient {
     if (-not $script:HttpClient) {
         $script:HttpClient = [System.Net.Http.HttpClient]::new()
         $script:HttpClient.Timeout = [TimeSpan]::FromSeconds(600)
@@ -23,7 +23,7 @@ function Invoke-OpenAIRequest {
         [switch]$NoSpinner,
         [string]$Label = 'thinking…'
     )
-    $client = Get-KakunaHttpClient
+    $client = Get-SenseiHttpClient
     $req = [System.Net.Http.HttpRequestMessage]::new([System.Net.Http.HttpMethod]::new($Method), $Url)
     $cts = [System.Threading.CancellationTokenSource]::new()
     try {
@@ -129,7 +129,7 @@ function Invoke-OpenAIStreamRequest {
     # @{ HttpError = @{Status;Body;RetryAfter} } on a non-200 (nothing rendered yet).
     # Throws OperationCanceledException on Ctrl+C; other exceptions = transport failure.
     param([string]$Url, [string]$Json, [string]$Key, [string]$Label = 'thinking…')
-    $client = Get-KakunaHttpClient
+    $client = Get-SenseiHttpClient
     $cts = [System.Threading.CancellationTokenSource]::new()
     $req = [System.Net.Http.HttpRequestMessage]::new([System.Net.Http.HttpMethod]::Post, $Url)
     $resp = $null
@@ -171,7 +171,7 @@ function Invoke-OpenAIStreamRequest {
         } else { $null }
         while ($true) {
             $lineTask = $sr.ReadLineAsync()
-            Wait-KakunaTask -Task $lineTask -Cts $cts -OnTick $tick
+            Wait-SenseiTask -Task $lineTask -Cts $cts -OnTick $tick
             $line = $lineTask.GetAwaiter().GetResult()
             if ($null -eq $line) { break }
             $d = Add-SseLine -A $acc -Line $line
@@ -216,7 +216,7 @@ function Invoke-OpenAIChat {
         $url = ([string]$script:Config.local_base_url).TrimEnd('/') + '/chat/completions'
     } else {
         $key = Get-OpenAIApiKey
-        if (-not $key) { throw 'No OpenAI API key configured. Set OPENAI_API_KEY or delete ~/.kakuna/config.json to rerun setup.' }
+        if (-not $key) { throw 'No OpenAI API key configured. Set OPENAI_API_KEY or delete ~/.sensei/config.json to rerun setup.' }
         $url = "$script:OpenAIBase/chat/completions"
     }
 
@@ -264,7 +264,7 @@ function Invoke-OpenAIChat {
                 }
                 if ($attempt -eq $maxAttempts) { throw "Network error talking to OpenAI: $($_.Exception.Message)" }
                 $delay = [Math]::Min(60, [Math]::Pow(2, $attempt))
-                Write-KakunaNote "network error ($($_.Exception.Message)); retrying in $([int]$delay)s ($attempt/$maxAttempts)…"
+                Write-SenseiNote "network error ($($_.Exception.Message)); retrying in $([int]$delay)s ($attempt/$maxAttempts)…"
                 Start-Sleep -Seconds $delay
                 continue
             }
@@ -276,14 +276,14 @@ function Invoke-OpenAIChat {
         if ($r.Status -in 429, 500, 502, 503 -and $attempt -lt $maxAttempts) {
             $delay = if ($r.RetryAfter) { [double]$r.RetryAfter }
                      else { [Math]::Min(60, [Math]::Pow(2, $attempt)) + (Get-Random -Minimum 0.0 -Maximum 1.0) }
-            Write-KakunaNote "API returned $($r.Status); retrying in $([int]$delay)s ($attempt/$maxAttempts)…"
+            Write-SenseiNote "API returned $($r.Status); retrying in $([int]$delay)s ($attempt/$maxAttempts)…"
             Start-Sleep -Seconds $delay
             continue
         }
 
         $errMsg = try { ($r.Body | ConvertFrom-Json -AsHashtable).error.message } catch { $r.Body }
         if ($r.Status -eq 401) {
-            throw "OpenAI rejected the API key (401): $errMsg`nFix OPENAI_API_KEY (or delete ~/.kakuna/config.json to rerun setup)."
+            throw "OpenAI rejected the API key (401): $errMsg`nFix OPENAI_API_KEY (or delete ~/.sensei/config.json to rerun setup)."
         }
         throw "API error $($r.Status): $errMsg"
     }

@@ -1,5 +1,5 @@
 #!/usr/bin/env pwsh
-# Kakuna — a terminal AI agent for debugging logs, powered by the OpenAI API or local Ollama.
+# Sensei — a terminal AI agent for debugging logs, powered by the OpenAI API or local Ollama.
 # NOTE: this file must stay parseable by Windows PowerShell 5.1 so the
 # relaunch guard below can run; pwsh-7-only syntax goes in src\*.ps1.
 
@@ -13,7 +13,7 @@ if ($PSVersionTable.PSEdition -ne 'Core' -or $PSVersionTable.PSVersion.Major -lt
         & $pwshCmd.Source -NoLogo -NoProfile -File $PSCommandPath @args
         exit $LASTEXITCODE
     }
-    Write-Host 'Kakuna requires PowerShell 7. Install it with:  winget install --id Microsoft.PowerShell -e'
+    Write-Host 'Sensei requires PowerShell 7. Install it with:  winget install --id Microsoft.PowerShell -e'
     exit 1
 }
 
@@ -21,8 +21,8 @@ if ($PSVersionTable.PSEdition -ne 'Core' -or $PSVersionTable.PSVersion.Major -lt
 [Console]::InputEncoding  = [System.Text.UTF8Encoding]::new()
 $OutputEncoding = [System.Text.UTF8Encoding]::new()
 
-$script:KakunaRoot    = $PSScriptRoot
-$script:KakunaVersion = '0.3.0'
+$script:SenseiRoot    = $PSScriptRoot
+$script:SenseiVersion = '0.3.1'
 $script:YoloMode      = $false
 $script:LocalMode     = $false
 $script:PrintMode     = $false
@@ -44,12 +44,12 @@ for ($i = 0; $i -lt $args.Count; $i++) {
         $script:PlanMode = $true
     } elseif ($arg -match '^(-p|--print)$') {
         if ($i + 1 -lt $args.Count) { $script:PrintPrompt = [string]$args[++$i]; $script:PrintMode = $true }
-        else { Write-Host 'kakuna: -p requires a prompt'; exit 1 }
+        else { Write-Host 'sensei: -p requires a prompt'; exit 1 }
     } elseif ($arg -match '^--?model$') {
         if ($i + 1 -lt $args.Count) { $script:ModelOverride = [string]$args[++$i] }
-        else { Write-Host 'kakuna: --model requires a value'; exit 1 }
+        else { Write-Host 'sensei: --model requires a value'; exit 1 }
     } elseif ($arg -match '^--?(help|h|\?)$') {
-        Write-Host 'usage: kakuna [--local] [--model <name>] [--yolo] [--resume] [-p <prompt>]'
+        Write-Host 'usage: sensei [--local] [--model <name>] [--yolo] [--resume] [-p <prompt>]'
         Write-Host ''
         Write-Host '  --local         use a local Ollama model instead of OpenAI (no API key needed)'
         Write-Host '  --model <name>  override the configured model for this session'
@@ -59,16 +59,16 @@ for ($i = 0; $i -lt $args.Count; $i++) {
         Write-Host '  -p <prompt>     print mode: run one prompt non-interactively and exit'
         exit 0
     } else {
-        Write-Host "kakuna: unknown option '$arg' (try --help)"
+        Write-Host "sensei: unknown option '$arg' (try --help)"
         exit 1
     }
 }
 
 foreach ($f in 'render', 'config', 'input', 'permissions', 'hooks', 'tools', 'skills', 'tasks', 'logtools', 'prompts', 'openai', 'agent', 'mcp', 'repl') {
-    . (Join-Path $script:KakunaRoot "src\$f.ps1")
+    . (Join-Path $script:SenseiRoot "src\$f.ps1")
 }
 
-Initialize-KakunaConfig
+Initialize-SenseiConfig
 if ($script:ModelOverride) {
     if ($script:LocalMode) { $script:Config.local_model = $script:ModelOverride }
     else { $script:Config.model = $script:ModelOverride }
@@ -76,35 +76,35 @@ if ($script:ModelOverride) {
 if (-not $script:Config.theme -or ($script:PrintMode -and [Console]::IsOutputRedirected)) {
     foreach ($k in @($script:Theme.Keys)) { $script:Theme[$k] = '' }
 }
-Initialize-KakunaInput
+Initialize-SenseiInput
 
 if (-not $script:PrintMode) {
-    Show-KakunaBanner
+    Show-SenseiBanner
     if ($script:YoloMode) {
         Write-Host "$($script:Theme.Err) yolo mode: all tool permission prompts are OFF$($script:Theme.Reset)"
         Write-Host ''
     }
 }
 
-Register-KakunaSkillTool
-Start-KakunaMcpServers
+Register-SenseiSkillTool
+Start-SenseiMcpServers
 
 $script:Messages = [System.Collections.Generic.List[object]]::new()
-$script:Messages.Add(@{ role = 'system'; content = (Get-KakunaSystemPrompt) })
+$script:Messages.Add(@{ role = 'system'; content = (Get-SenseiSystemPrompt) })
 
 try {
     if ($script:PrintMode) {
         Invoke-AgentTurn $script:PrintPrompt
     } else {
         if ($script:ResumeFlag) { Show-ResumePicker }
-        Start-KakunaRepl
+        Start-SenseiRepl
     }
 } finally {
-    Stop-KakunaMcpServers
+    Stop-SenseiMcpServers
     Stop-AllBackgroundTasks
-    Save-KakunaSession
+    Save-SenseiSession
     if ($script:HttpClient) { $script:HttpClient.Dispose() }
     if (-not $script:PrintMode) {
-        Write-Host "$($script:Theme.Accent) kakuna out. harden well.$($script:Theme.Reset)"
+        Write-Host "$($script:Theme.Accent) sensei out. harden well.$($script:Theme.Reset)"
     }
 }

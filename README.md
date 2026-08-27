@@ -1,22 +1,28 @@
-# kakuna
+# sensei
 
 A terminal AI agent for debugging logs, written in PowerShell 7 — a Claude Code-style agent powered by the OpenAI API or a local Ollama model. Full agentic tooling (read/write/edit/glob/grep/run, subagents, background tasks, MCP servers) plus two log-specific tools (`log_stats`, `log_slice`) that let the model analyze huge log files without drowning in tokens.
 
 ```
-             ▄▄▄▄▄
-           ▄███████▄        kakuna — log-debugging agent
-          ▄█████████▄
+   ██          ██
+    ██        ██
+     ██      ██
+   ██████████████       sensei — log-debugging agent
+  ████████████████
+  ████  ████  ████
+  ████████████████
+   ██  ██  ██  ██
+    ████████████
 ```
 
 ## Setup
 
 1. `winget install --id Microsoft.PowerShell -e` (PowerShell 7)
-2. Run `kakuna.cmd` (or `pwsh -File kakuna.ps1`). First run asks for your OpenAI API key and offers to persist it, and to add the folder to your PATH so `kakuna` works from any shell. Or skip the key entirely with `--local` (uses Ollama at `localhost:11434`, default model `qwen3:14b`).
+2. Run `sensei.cmd` (or `pwsh -File sensei.ps1`). First run asks for your OpenAI API key and offers to persist it, and to add the folder to your PATH so `sensei` works from any shell. Or skip the key entirely with `--local` (uses Ollama at `localhost:11434`, default model `qwen3:14b`).
 
 ## Usage
 
 ```
-kakuna [--local] [--model <name>] [--yolo] [--resume] [--plan] [-p <prompt>]
+sensei [--local] [--model <name>] [--yolo] [--resume] [--plan] [-p <prompt>]
 ```
 
 - `--local` — local Ollama model instead of OpenAI (no API key)
@@ -30,14 +36,14 @@ Ask things like: `summarize what's wrong with tests\app.log` · `what happened r
 
 ## Slash commands
 
-`/help` `/clear` `/compact` `/plan` `/style` `/model` `/config` `/mcp` `/permissions` `/skills` `/newskill` `/tasks` `/todos` `/cost` `/memory` `/init` `/resume` `/exit` — plus custom commands: drop a markdown file in `.kakuna\commands\name.md` (project) or `~/.kakuna/commands/` (global), `$ARGUMENTS` is substituted, and `/name args` submits it as a prompt.
+`/help` `/clear` `/compact` `/plan` `/style` `/model` `/config` `/mcp` `/permissions` `/skills` `/newskill` `/tasks` `/todos` `/cost` `/memory` `/init` `/resume` `/exit` — plus custom commands: drop a markdown file in `.sensei\commands\name.md` (project) or `~/.sensei/commands/` (global), `$ARGUMENTS` is substituted, and `/name args` submits it as a prompt.
 
 ## Skills
 
 Packaged instruction sets the **model discovers on its own** (unlike custom commands, which only you can trigger). A skill is a folder with a `SKILL.md`:
 
 ```
-.kakuna\skills\<name>\SKILL.md      (project)    ~/.kakuna/skills/<name>/SKILL.md      (global)
+.sensei\skills\<name>\SKILL.md      (project)    ~/.sensei/skills/<name>/SKILL.md      (global)
 ```
 
 ```markdown
@@ -54,7 +60,7 @@ The `skill` tool's description lists every skill's name + description, so when a
 
 `read_file` `write_file` `edit_file` `multi_edit` (several atomic edits to one file) `glob` `grep` `run_powershell` (foreground or `run_in_background` → `task_output`/`kill_task`) `task` / `task_parallel` (subagents with their own context; up to 3 concurrent) `verify` (independent check via a fresh subagent) `todo_write` `web_fetch` `skill` (loads packaged skills) `exit_plan_mode` `log_slice` `log_stats` `log_timeline` `log_trace` `log_search` `log_baseline` — and every tool exposed by configured MCP servers as `mcp__<server>__<tool>`.
 
-### Log-debugging tools (Kakuna's edge)
+### Log-debugging tools (Sensei's edge)
 
 - **`log_stats`** — one-pass profile: level counts, time range, error-frequency-over-time, top error templates. Always called first.
 - **`log_slice`** — tail/head/line-range/time-range of a huge file, streamed, never loaded whole.
@@ -67,7 +73,7 @@ Read-only tools run without prompting; anything that writes or executes asks `[y
 
 ## MCP servers
 
-Kakuna is an MCP client (stdio transport). Configure in `~/.kakuna/config.json` or a project `.kakuna.json`:
+Sensei is an MCP client (stdio transport). Configure in `~/.sensei/config.json` or a project `.sensei.json`:
 
 ```json
 {
@@ -77,18 +83,18 @@ Kakuna is an MCP client (stdio transport). Configure in `~/.kakuna/config.json` 
 }
 ```
 
-`/mcp` shows status; server stderr lands in `~/.kakuna/logs/mcp-<name>.log`.
+`/mcp` shows status; server stderr lands in `~/.sensei/logs/mcp-<name>.log`.
 
 ## Config
 
-`~/.kakuna/config.json` — model, local_model/local_base_url, max_output_tokens, stream, theme, save_sessions, context_char_budget, mcp_call_timeout, mcpServers, permissions.allow, hooks, prices. A project `.kakuna.json` in the working directory adds `mcpServers`, `permissions.allow`, and `hooks`.
+`~/.sensei/config.json` — model, local_model/local_base_url, max_output_tokens, stream, theme, save_sessions, context_char_budget, mcp_call_timeout, mcpServers, permissions.allow, hooks, prices. A project `.sensei.json` in the working directory adds `mcpServers`, `permissions.allow`, and `hooks`.
 
 - **Allowlist rules**: `"permissions": {"allow": ["run_powershell(git *)", "mcp__github__*", "write_file(C:\\logs\\*)"]}` — matched tools skip the prompt.
 - **Hooks**: `"hooks": [{"event": "PreToolUse", "matcher": "run_powershell", "command": "..."}]` — the command gets a JSON payload on stdin; exit 2 on PreToolUse/UserPromptSubmit blocks. Events: PreToolUse, PostToolUse, UserPromptSubmit, Stop.
-- **Memory**: `KAKUNA.md` in `~/.kakuna/` and/or the working directory is loaded into the system prompt; `/init` writes one for the current directory.
+- **Memory**: `SENSEI.md` in `~/.sensei/` and/or the working directory is loaded into the system prompt; `/init` writes one for the current directory.
 - **Context**: past ~80% of budget the conversation is auto-compacted (summarized by the model); `/compact` does it on demand.
 
-Session transcripts land in `~/.kakuna/sessions/`; `--resume` / `/resume` continues one.
+Session transcripts land in `~/.sensei/sessions/`; `--resume` / `/resume` continues one.
 
 ## Tests
 

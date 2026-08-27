@@ -1,5 +1,5 @@
 # mcp.ps1 — Model Context Protocol client, stdio transport.
-# Servers are configured under "mcpServers" in ~/.kakuna/config.json or .kakuna.json:
+# Servers are configured under "mcpServers" in ~/.sensei/config.json or .sensei.json:
 #   "mcpServers": { "fs": { "command": "npx", "args": ["-y", "@modelcontextprotocol/server-filesystem", "C:\\logs"], "env": {} } }
 # Their tools register as mcp__<server>__<tool> and dispatch through JSON-RPC
 # (newline-delimited JSON over the child's stdin/stdout — no Content-Length framing).
@@ -8,8 +8,8 @@ $script:McpServers = [ordered]@{}
 
 function Get-McpLogPath { param([string]$Name) Join-Path $script:ConfigDir "logs\mcp-$Name.log" }
 
-function Start-KakunaMcpServers {
-    $servers = Get-KakunaMcpServers
+function Start-SenseiMcpServers {
+    $servers = Get-SenseiMcpServers
     if (-not $servers -or $servers.Count -eq 0) { return }
     foreach ($name in @($servers.Keys)) {
         $cfg = $servers[$name]
@@ -17,7 +17,7 @@ function Start-KakunaMcpServers {
             Connect-McpServer -Name $name -Config $cfg
             $s = $script:McpServers[$name]
             if (-not $script:PrintMode) {
-                Write-KakunaNote "mcp: $name connected ($(@($s.Tools).Count) tools)"
+                Write-SenseiNote "mcp: $name connected ($(@($s.Tools).Count) tools)"
             }
         } catch {
             if ($script:McpServers.Contains($name)) {
@@ -30,7 +30,7 @@ function Start-KakunaMcpServers {
             } else {
                 $script:McpServers[$name] = @{ Name = $name; Status = 'failed'; Error = $_.Exception.Message; Config = $cfg; Tools = @() }
             }
-            Write-KakunaNote "mcp: $name failed — $($_.Exception.Message) (log: $(Get-McpLogPath $name))"
+            Write-SenseiNote "mcp: $name failed — $($_.Exception.Message) (log: $(Get-McpLogPath $name))"
         }
     }
 }
@@ -86,7 +86,7 @@ function Connect-McpServer {
     [void](Send-McpRequest -Server $s -Method 'initialize' -Params @{
         protocolVersion = '2025-06-18'
         capabilities    = @{}
-        clientInfo      = @{ name = 'kakuna'; version = [string]$script:KakunaVersion }
+        clientInfo      = @{ name = 'sensei'; version = [string]$script:SenseiVersion }
     } -TimeoutSec 15)
     Send-McpNotification -Server $s -Method 'notifications/initialized'
 
@@ -221,7 +221,7 @@ function Register-McpTools {
         if (-not ($schema -is [hashtable]) -or [string]$schema.type -ne 'object') {
             $schema = @{ type = 'object'; properties = @{} }
         }
-        Register-KakunaTool -Name $safe -Description ([string]$tool.description) `
+        Register-SenseiTool -Name $safe -Description ([string]$tool.description) `
             -Parameters $schema -ReadOnly $false -Handler { param($a) 'ERROR: MCP dispatch missing' }
         # dispatch metadata: agent routes these to Invoke-McpToolCall (no closure games)
         $script:ToolRegistry[$safe].McpServer = $Server.Name
@@ -256,7 +256,7 @@ function Invoke-McpToolCall {
     return $text
 }
 
-function Stop-KakunaMcpServers {
+function Stop-SenseiMcpServers {
     foreach ($s in @($script:McpServers.Values)) {
         if (-not $s.Process) { continue }
         try { $s.Writer.Dispose() } catch { }                     # closing stdin = MCP shutdown signal
@@ -271,8 +271,8 @@ function Stop-KakunaMcpServers {
 
 function Show-McpStatus {
     if ($script:McpServers.Count -eq 0) {
-        Write-KakunaNote 'no MCP servers configured — add "mcpServers" to ~/.kakuna/config.json or .kakuna.json:'
-        Write-KakunaNote '  "mcpServers": { "fs": { "command": "npx", "args": ["-y", "@modelcontextprotocol/server-filesystem", "C:\\logs"] } }'
+        Write-SenseiNote 'no MCP servers configured — add "mcpServers" to ~/.sensei/config.json or .sensei.json:'
+        Write-SenseiNote '  "mcpServers": { "fs": { "command": "npx", "args": ["-y", "@modelcontextprotocol/server-filesystem", "C:\\logs"] } }'
         return
     }
     foreach ($s in $script:McpServers.Values) {
@@ -281,11 +281,11 @@ function Show-McpStatus {
             foreach ($tool in @($s.Tools)) {
                 $desc = [string]$tool.description -replace '\r?\n.*', ''
                 if ($desc.Length -gt 70) { $desc = $desc.Substring(0, 67) + '…' }
-                Write-KakunaNote "     mcp__$($s.Name)__$($tool.name) — $desc"
+                Write-SenseiNote "     mcp__$($s.Name)__$($tool.name) — $desc"
             }
         } else {
             Write-Host "  $($script:Theme.Err)●$($script:Theme.Reset) $($s.Name) — failed: $($s.Error)"
-            Write-KakunaNote "     log: $(Get-McpLogPath $s.Name)"
+            Write-SenseiNote "     log: $(Get-McpLogPath $s.Name)"
         }
     }
 }

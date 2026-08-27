@@ -2,7 +2,7 @@
 
 $script:ToolRegistry = [ordered]@{}
 
-function Register-KakunaTool {
+function Register-SenseiTool {
     param(
         [string]$Name,
         [string]$Description,
@@ -43,7 +43,7 @@ function Limit-ToolOutput {
     return $Text.Substring(0, $Max) + "`n[truncated: showing $Max of $($Text.Length) chars — use offset/limit or range parameters to narrow the request]"
 }
 
-function Resolve-KakunaPath {
+function Resolve-SenseiPath {
     param([string]$Path)
     if ([System.IO.Path]::IsPathRooted($Path)) { return [System.IO.Path]::GetFullPath($Path) }
     return [System.IO.Path]::GetFullPath((Join-Path (Get-Location).Path $Path))
@@ -51,7 +51,7 @@ function Resolve-KakunaPath {
 
 # --- read_file -------------------------------------------------------------
 
-Register-KakunaTool -Name 'read_file' -ReadOnly $true -PrimaryArg 'path' `
+Register-SenseiTool -Name 'read_file' -ReadOnly $true -PrimaryArg 'path' `
     -Description 'Read a text file with line numbers. Use offset/limit to page through large files. For log files prefer log_stats and log_slice.' `
     -Parameters @{
         type       = 'object'
@@ -63,7 +63,7 @@ Register-KakunaTool -Name 'read_file' -ReadOnly $true -PrimaryArg 'path' `
         required   = @('path')
     } -Handler {
         param($a)
-        $path = Resolve-KakunaPath $a.path
+        $path = Resolve-SenseiPath $a.path
         if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { return "ERROR: file not found: $path" }
         $offset = [Math]::Max(1, [int]($a.offset ?? 1))
         $limit  = [Math]::Max(1, [int]($a.limit ?? 2000))
@@ -93,7 +93,7 @@ Register-KakunaTool -Name 'read_file' -ReadOnly $true -PrimaryArg 'path' `
 
 # --- write_file ------------------------------------------------------------
 
-Register-KakunaTool -Name 'write_file' -ReadOnly $false -PrimaryArg 'path' `
+Register-SenseiTool -Name 'write_file' -ReadOnly $false -PrimaryArg 'path' `
     -Description 'Create or overwrite a text file with the given content (UTF-8, no BOM). Parent directories are created automatically.' `
     -Parameters @{
         type       = 'object'
@@ -104,7 +104,7 @@ Register-KakunaTool -Name 'write_file' -ReadOnly $false -PrimaryArg 'path' `
         required   = @('path', 'content')
     } -Handler {
         param($a)
-        $path = Resolve-KakunaPath $a.path
+        $path = Resolve-SenseiPath $a.path
         $dir = Split-Path -Parent $path
         if ($dir -and -not (Test-Path -LiteralPath $dir)) { [void][System.IO.Directory]::CreateDirectory($dir) }
         [System.IO.File]::WriteAllText($path, [string]$a.content)
@@ -113,7 +113,7 @@ Register-KakunaTool -Name 'write_file' -ReadOnly $false -PrimaryArg 'path' `
 
 # --- edit_file -------------------------------------------------------------
 
-Register-KakunaTool -Name 'edit_file' -ReadOnly $false -PrimaryArg 'path' `
+Register-SenseiTool -Name 'edit_file' -ReadOnly $false -PrimaryArg 'path' `
     -Description 'Replace an exact string in a file. old_string must match exactly once unless replace_all is true; include surrounding lines to make it unique.' `
     -Parameters @{
         type       = 'object'
@@ -126,7 +126,7 @@ Register-KakunaTool -Name 'edit_file' -ReadOnly $false -PrimaryArg 'path' `
         required   = @('path', 'old_string', 'new_string')
     } -Handler {
         param($a)
-        $path = Resolve-KakunaPath $a.path
+        $path = Resolve-SenseiPath $a.path
         if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { return "ERROR: file not found: $path" }
         $old = [string]$a.old_string
         $new = [string]$a.new_string
@@ -150,7 +150,7 @@ Register-KakunaTool -Name 'edit_file' -ReadOnly $false -PrimaryArg 'path' `
 
 # --- multi_edit ------------------------------------------------------------
 
-Register-KakunaTool -Name 'multi_edit' -ReadOnly $false -PrimaryArg 'path' `
+Register-SenseiTool -Name 'multi_edit' -ReadOnly $false -PrimaryArg 'path' `
     -Description 'Apply several exact-string edits to one file atomically, in order. Each edit follows edit_file rules (old_string unique unless replace_all). If ANY edit fails to match, the file is left unchanged and an error names the failing edit.' `
     -Parameters @{
         type       = 'object'
@@ -172,7 +172,7 @@ Register-KakunaTool -Name 'multi_edit' -ReadOnly $false -PrimaryArg 'path' `
         required   = @('path', 'edits')
     } -Handler {
         param($a)
-        $path = Resolve-KakunaPath $a.path
+        $path = Resolve-SenseiPath $a.path
         if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { return "ERROR: file not found: $path" }
         $edits = @($a.edits)
         if ($edits.Count -eq 0) { return 'ERROR: no edits provided' }
@@ -201,7 +201,7 @@ Register-KakunaTool -Name 'multi_edit' -ReadOnly $false -PrimaryArg 'path' `
 
 # --- glob ------------------------------------------------------------------
 
-Register-KakunaTool -Name 'glob' -ReadOnly $true -PrimaryArg 'path' `
+Register-SenseiTool -Name 'glob' -ReadOnly $true -PrimaryArg 'path' `
     -Description "Find files by glob pattern, newest first (max 200). '*.log' matches only the top level of the search root; '**/*.log' matches recursively." `
     -Parameters @{
         type       = 'object'
@@ -212,7 +212,7 @@ Register-KakunaTool -Name 'glob' -ReadOnly $true -PrimaryArg 'path' `
         required   = @('pattern')
     } -Handler {
         param($a)
-        $root = Resolve-KakunaPath ([string]($a.path ?? '.'))
+        $root = Resolve-SenseiPath ([string]($a.path ?? '.'))
         if (-not (Test-Path -LiteralPath $root -PathType Container)) { return "ERROR: directory not found: $root" }
         $rx = '^' + ([regex]::Escape((([string]$a.pattern) -replace '\\', '/')) `
                 -replace '\\\*\\\*/', '(?:.*/)?' `
@@ -236,7 +236,7 @@ Register-KakunaTool -Name 'glob' -ReadOnly $true -PrimaryArg 'path' `
 
 # --- grep ------------------------------------------------------------------
 
-Register-KakunaTool -Name 'grep' -ReadOnly $true -PrimaryArg 'path' `
+Register-SenseiTool -Name 'grep' -ReadOnly $true -PrimaryArg 'path' `
     -Description 'Regex content search across files (case-insensitive by default). Modes: files_with_matches (default), content (file:line:text with optional context), count (per-file match counts).' `
     -Parameters @{
         type       = 'object'
@@ -252,7 +252,7 @@ Register-KakunaTool -Name 'grep' -ReadOnly $true -PrimaryArg 'path' `
         required   = @('pattern')
     } -Handler {
         param($a)
-        $root = Resolve-KakunaPath ([string]($a.path ?? '.'))
+        $root = Resolve-SenseiPath ([string]($a.path ?? '.'))
         if (-not (Test-Path -LiteralPath $root)) { return "ERROR: path not found: $root" }
         $files = if (Test-Path -LiteralPath $root -PathType Leaf) {
             @(Get-Item -LiteralPath $root)
@@ -306,7 +306,7 @@ Register-KakunaTool -Name 'grep' -ReadOnly $true -PrimaryArg 'path' `
 
 # --- run_powershell --------------------------------------------------------
 
-Register-KakunaTool -Name 'run_powershell' -ReadOnly $false -PrimaryArg 'command' `
+Register-SenseiTool -Name 'run_powershell' -ReadOnly $false -PrimaryArg 'command' `
     -Description 'Run a command in a fresh non-interactive pwsh child process and return exit code, stdout, and stderr. State does not persist between calls. Default timeout 120s. Set run_in_background=true for long-running commands: returns a task id immediately; check it later with task_output.' `
     -Parameters @{
         type       = 'object'
@@ -319,7 +319,7 @@ Register-KakunaTool -Name 'run_powershell' -ReadOnly $false -PrimaryArg 'command
     } -Handler {
         param($a)
         if ([bool]($a.run_in_background ?? $false)) {
-            return Start-KakunaBackgroundTask -Command ([string]$a.command)
+            return Start-SenseiBackgroundTask -Command ([string]$a.command)
         }
         $timeoutMs = 1000 * [Math]::Min(600, [Math]::Max(1, [int]($a.timeout_seconds ?? 120)))
         $psi = [System.Diagnostics.ProcessStartInfo]::new()
@@ -353,7 +353,7 @@ Register-KakunaTool -Name 'run_powershell' -ReadOnly $false -PrimaryArg 'command
 
 # --- todo_write ------------------------------------------------------------
 
-Register-KakunaTool -Name 'todo_write' -ReadOnly $true `
+Register-SenseiTool -Name 'todo_write' -ReadOnly $true `
     -Description 'Create or update the visible task checklist for multi-step work. Pass the FULL list every time (it replaces the previous one). Keep exactly one item in_progress while working.' `
     -Parameters @{
         type       = 'object'
@@ -374,13 +374,13 @@ Register-KakunaTool -Name 'todo_write' -ReadOnly $true `
     } -Handler {
         param($a)
         $script:Todos = @($a.todos)
-        Write-KakunaTodos
+        Write-SenseiTodos
         return "Todos updated ($(@($a.todos).Count) items)"
     }
 
 # --- web_fetch --------------------------------------------------------------
 
-function ConvertFrom-KakunaHtml {
+function ConvertFrom-SenseiHtml {
     param([string]$Html)
     $t = $Html -replace '(?is)<(script|style|noscript)\b.*?</\1\s*>', ' '
     $t = $t -replace '(?is)<!--.*?-->', ' '
@@ -391,7 +391,7 @@ function ConvertFrom-KakunaHtml {
     return (($t -split "`r?`n" | ForEach-Object { $_.Trim() } | Where-Object { $_ }) -join "`n")
 }
 
-Register-KakunaTool -Name 'web_fetch' -ReadOnly $true -PrimaryArg 'url' `
+Register-SenseiTool -Name 'web_fetch' -ReadOnly $true -PrimaryArg 'url' `
     -Description 'Fetch an http(s) URL and return its content as plain text (HTML is stripped). Use for documentation, error-message lookups, and referenced pages.' `
     -Parameters @{
         type       = 'object'
@@ -401,11 +401,11 @@ Register-KakunaTool -Name 'web_fetch' -ReadOnly $true -PrimaryArg 'url' `
         param($a)
         $url = [string]$a.url
         if ($url -notmatch '^https?://') { return 'ERROR: only http(s) URLs are supported' }
-        $client = Get-KakunaHttpClient
+        $client = Get-SenseiHttpClient
         $req = [System.Net.Http.HttpRequestMessage]::new([System.Net.Http.HttpMethod]::Get, $url)
         $cts = [System.Threading.CancellationTokenSource]::new(30000)
         try {
-            $req.Headers.UserAgent.ParseAdd("kakuna/$script:KakunaVersion")
+            $req.Headers.UserAgent.ParseAdd("sensei/$script:SenseiVersion")
             $task = $client.SendAsync($req, $cts.Token)
             Invoke-CancellableWait -Task $task -Cts $cts -Label 'fetching…'
             $resp = $task.GetAwaiter().GetResult()
@@ -415,7 +415,7 @@ Register-KakunaTool -Name 'web_fetch' -ReadOnly $true -PrimaryArg 'url' `
                 if ($text.Length -gt 2MB) { $text = $text.Substring(0, 2MB) }
                 $ct = ''
                 if ($resp.Content.Headers.ContentType) { $ct = [string]$resp.Content.Headers.ContentType.MediaType }
-                if ($ct -like '*html*' -or $text -match '(?i)<html') { $text = ConvertFrom-KakunaHtml $text }
+                if ($ct -like '*html*' -or $text -match '(?i)<html') { $text = ConvertFrom-SenseiHtml $text }
                 if (-not $text.Trim()) { return "(empty page: $url)" }
                 return $text
             } finally {

@@ -25,7 +25,7 @@ function Show-ToolCall {
     }
 }
 
-function Invoke-KakunaToolCall {
+function Invoke-SenseiToolCall {
     param($ToolCall, [int]$Depth = 0)
     $name = [string]$ToolCall.function.name
     $tool = $script:ToolRegistry[$name]
@@ -41,15 +41,15 @@ function Invoke-KakunaToolCall {
     }
     Show-ToolCall $name $toolArgs $Depth
 
-    $hook = Invoke-KakunaHooks -Event 'PreToolUse' -ToolName $name -ToolInput $toolArgs
+    $hook = Invoke-SenseiHooks -Event 'PreToolUse' -ToolName $name -ToolInput $toolArgs
     if ($hook.Block) { return "ERROR: blocked by PreToolUse hook: $($hook.Reason)" }
 
     if (-not (Request-ToolPermission -Name $name -Tool $tool -ToolArgs $toolArgs)) {
         if ($script:PlanMode) {
-            Write-KakunaNote '  (plan mode: blocked)'
+            Write-SenseiNote '  (plan mode: blocked)'
             return "ERROR: plan mode is read-only — you cannot run $name yet. Finish researching, then call exit_plan_mode with your plan for the user to approve."
         }
-        Write-KakunaNote '  denied'
+        Write-SenseiNote '  denied'
         if ($script:PrintMode -or [Console]::IsInputRedirected) {
             return 'ERROR: permission denied (non-interactive mode; rerun with --yolo or add an allowlist rule)'
         }
@@ -68,7 +68,7 @@ function Invoke-KakunaToolCall {
     } catch {
         $out = "ERROR: $($_.Exception.Message)"
     }
-    [void](Invoke-KakunaHooks -Event 'PostToolUse' -ToolName $name -ToolInput $toolArgs -ToolResponse ([string]$out))
+    [void](Invoke-SenseiHooks -Event 'PostToolUse' -ToolName $name -ToolInput $toolArgs -ToolResponse ([string]$out))
     return $out
 }
 
@@ -90,13 +90,13 @@ function Invoke-AgentLoop {
             $resp = Invoke-OpenAIChat -Messages $Messages -ToolSpecs (Get-ToolSpecs -Exclude $ExcludeTools) `
                 -AllowStream:($AllowStream -and $Depth -eq 0)
         } catch {
-            Write-KakunaError "$($_.Exception.Message)"
+            Write-SenseiError "$($_.Exception.Message)"
             $result.FinalText = "ERROR: $($_.Exception.Message)"
             $result.FinishReason = 'error'
             return $result
         }
         if ($resp.Aborted) {
-            Write-KakunaNote '(request aborted)'
+            Write-SenseiNote '(request aborted)'
             $result.Aborted = $true
             return $result
         }
@@ -118,17 +118,17 @@ function Invoke-AgentLoop {
             if ($Depth -eq 0) {
                 if ($msg.content -and -not $resp._printed) {
                     Write-Host ''
-                    Write-KakunaMarkdown $msg.content
+                    Write-SenseiMarkdown $msg.content
                 }
                 if ($choice.finish_reason -eq 'length') {
-                    Write-KakunaNote '(output was cut off by max_output_tokens — /config to raise it)'
+                    Write-SenseiNote '(output was cut off by max_output_tokens — /config to raise it)'
                 }
             }
             return $result
         }
 
         foreach ($tc in $msg.tool_calls) {
-            $toolResult = Invoke-KakunaToolCall -ToolCall $tc -Depth $Depth
+            $toolResult = Invoke-SenseiToolCall -ToolCall $tc -Depth $Depth
             $Messages.Add(@{
                 role         = 'tool'
                 tool_call_id = $tc.id
@@ -141,7 +141,7 @@ function Invoke-AgentLoop {
             Invoke-ContextCompaction -Messages $Messages
         }
     }
-    Write-KakunaError "Reached the maximum of $MaxRounds tool rounds without a final answer."
+    Write-SenseiError "Reached the maximum of $MaxRounds tool rounds without a final answer."
     $result.FinalText = '(max tool rounds reached without a final answer)'
     $result.FinishReason = 'max_rounds'
     return $result
@@ -149,9 +149,9 @@ function Invoke-AgentLoop {
 
 function Invoke-AgentTurn {
     param([string]$UserText)
-    Register-KakunaSkillTool   # cheap rescan: picks up skills created mid-session
-    $hook = Invoke-KakunaHooks -Event 'UserPromptSubmit' -Prompt $UserText
-    if ($hook.Block) { Write-KakunaError "prompt blocked by hook: $($hook.Reason)"; return }
+    Register-SenseiSkillTool   # cheap rescan: picks up skills created mid-session
+    $hook = Invoke-SenseiHooks -Event 'UserPromptSubmit' -Prompt $UserText
+    if ($hook.Block) { Write-SenseiError "prompt blocked by hook: $($hook.Reason)"; return }
     $expanded = Expand-FileReferences $UserText
     $script:Messages.Add(@{ role = 'user'; content = $expanded })
     Add-BackgroundTaskNotices -Messages $script:Messages
@@ -160,8 +160,8 @@ function Invoke-AgentTurn {
     if (-not $r.Aborted) {
         Invoke-AutoVerify -StartIndex $startCount
         Write-Host ''
-        Write-KakunaNote (Get-KakunaCostLine)
-        [void](Invoke-KakunaHooks -Event 'Stop' -LastMessage ([string]$r.FinalText))
+        Write-SenseiNote (Get-SenseiCostLine)
+        [void](Invoke-SenseiHooks -Event 'Stop' -LastMessage ([string]$r.FinalText))
     }
 }
 
@@ -179,9 +179,9 @@ function Invoke-AutoVerify {
         }
     }
     if (-not $wrote) { return }
-    Write-KakunaNote 'auto-verify: checking the changes…'
+    Write-SenseiNote 'auto-verify: checking the changes…'
     $child = [System.Collections.Generic.List[object]]::new()
-    $child.Add(@{ role = 'system'; content = (Get-KakunaSystemPrompt -Subagent) })
+    $child.Add(@{ role = 'system'; content = (Get-SenseiSystemPrompt -Subagent) })
     $child.Add(@{ role = 'user'; content = 'The agent just modified one or more files in this directory to satisfy the user. Inspect the current state of those files with read-only tools and judge whether the change is correct and complete. Reply starting with PASS or FAIL, then brief evidence.' })
     $r = Invoke-AgentLoop -Messages $child -MaxRounds 12 -Depth 1 -ExcludeTools @('task', 'task_parallel', 'verify', 'exit_plan_mode')
     if ($r.FinalText) {
@@ -198,7 +198,7 @@ function Expand-FileReferences {
     foreach ($m in [regex]::Matches($Text, '(?<=^|\s)@([\w.\\/:~-]+)')) {
         $p = $m.Groups[1].Value
         $abs = $null
-        try { $abs = Resolve-KakunaPath $p } catch { continue }
+        try { $abs = Resolve-SenseiPath $p } catch { continue }
         if (-not (Test-Path -LiteralPath $abs -PathType Leaf)) { continue }
         $len = (Get-Item -LiteralPath $abs).Length
         if ($len -gt 262144) {
@@ -213,7 +213,7 @@ function Expand-FileReferences {
 
 # --- subagents (task tool) --------------------------------------------------
 
-Register-KakunaTool -Name 'task' -ReadOnly $true `
+Register-SenseiTool -Name 'task' -ReadOnly $true `
     -Description "Delegate a self-contained investigation to a subagent with its own fresh context. It can use every tool except task, works autonomously, and returns only its final report. Use for scoped side-work whose intermediate details you don't need." `
     -Parameters @{
         type       = 'object'
@@ -226,18 +226,18 @@ Register-KakunaTool -Name 'task' -ReadOnly $true `
         param($a)
         Write-Host "$($script:Theme.Accent)◇ subagent: $(Protect-TerminalText ([string]$a.description))$($script:Theme.Reset)"
         $child = [System.Collections.Generic.List[object]]::new()
-        $child.Add(@{ role = 'system'; content = (Get-KakunaSystemPrompt -Subagent) })
+        $child.Add(@{ role = 'system'; content = (Get-SenseiSystemPrompt -Subagent) })
         $child.Add(@{ role = 'user'; content = [string]$a.prompt })
         $r = Invoke-AgentLoop -Messages $child -MaxRounds 25 -Depth 1 -ExcludeTools @('task', 'task_parallel', 'verify', 'exit_plan_mode')
         if ($r.Aborted) { return 'ERROR: subagent aborted by user' }
         if (-not $r.FinalText) { return 'ERROR: subagent returned no result' }
-        Write-KakunaNote "  ◇ subagent finished ($($r.Rounds) rounds)"
+        Write-SenseiNote "  ◇ subagent finished ($($r.Rounds) rounds)"
         return [string]$r.FinalText
     }
 
 # --- verify (independent check via a fresh subagent) -----------------------
 
-Register-KakunaTool -Name 'verify' -ReadOnly $true `
+Register-SenseiTool -Name 'verify' -ReadOnly $true `
     -Description 'Independently verify a claim or that a change is correct. Spawns a fresh subagent with read-only tools that checks the claim against the actual files/logs and reports PASS or FAIL with evidence. Use before asserting something important is fixed or true.' `
     -Parameters @{
         type       = 'object'
@@ -247,17 +247,17 @@ Register-KakunaTool -Name 'verify' -ReadOnly $true `
         param($a)
         Write-Host "$($script:Theme.Accent)◇ verify: $(Protect-TerminalText ([string]$a.claim))$($script:Theme.Reset)"
         $child = [System.Collections.Generic.List[object]]::new()
-        $child.Add(@{ role = 'system'; content = (Get-KakunaSystemPrompt -Subagent) })
+        $child.Add(@{ role = 'system'; content = (Get-SenseiSystemPrompt -Subagent) })
         $child.Add(@{ role = 'user'; content = "Independently verify this claim by inspecting the actual files/logs with read-only tools. Do not assume it is true. Reply starting with PASS or FAIL, then the evidence (path:line):`n`n$($a.claim)" })
         $r = Invoke-AgentLoop -Messages $child -MaxRounds 15 -Depth 1 -ExcludeTools @('task', 'verify', 'task_parallel')
         if ($r.Aborted) { return 'ERROR: verification aborted' }
-        Write-KakunaNote '  ◇ verify finished'
+        Write-SenseiNote '  ◇ verify finished'
         return [string]$r.FinalText
     }
 
 # --- exit_plan_mode --------------------------------------------------------
 
-Register-KakunaTool -Name 'exit_plan_mode' -ReadOnly $true `
+Register-SenseiTool -Name 'exit_plan_mode' -ReadOnly $true `
     -Description 'Call this when, in plan mode, your plan is ready. Presents the plan to the user for approval; if approved, plan mode ends and you may execute it.' `
     -Parameters @{
         type       = 'object'
@@ -268,12 +268,12 @@ Register-KakunaTool -Name 'exit_plan_mode' -ReadOnly $true `
         if (-not $script:PlanMode) { return 'Not in plan mode; nothing to exit.' }
         Write-Host ''
         Write-Host "$($script:Theme.Bold)$($script:Theme.Accent)Proposed plan:$($script:Theme.Reset)"
-        Write-KakunaMarkdown ([string]$a.plan)
+        Write-SenseiMarkdown ([string]$a.plan)
         Write-Host ''
         if ($script:PrintMode -or [Console]::IsInputRedirected) {
             return 'Plan recorded (non-interactive; still in plan mode — the user will review).'
         }
-        $ans = (Read-Host '  Approve this plan and let Kakuna execute it? [y/N]').Trim().ToLower()
+        $ans = (Read-Host '  Approve this plan and let Sensei execute it? [y/N]').Trim().ToLower()
         if ($ans -in 'y', 'yes') {
             $script:PlanMode = $false
             return 'APPROVED — plan mode is now off. Proceed to execute the plan.'
@@ -283,7 +283,7 @@ Register-KakunaTool -Name 'exit_plan_mode' -ReadOnly $true `
 
 # --- task_parallel (bounded concurrent subagents) --------------------------
 
-Register-KakunaTool -Name 'task_parallel' -ReadOnly $true `
+Register-SenseiTool -Name 'task_parallel' -ReadOnly $true `
     -Description 'Run up to 3 independent subagent investigations concurrently and return all their reports. Use for genuinely independent side-work (e.g. analyzing several logs at once). Each runs in isolation and cannot ask the user questions.' `
     -Parameters @{
         type       = 'object'
@@ -313,7 +313,7 @@ Register-KakunaTool -Name 'task_parallel' -ReadOnly $true `
             # sequential fallback — still correct, just not concurrent
             $out = for ($i = 0; $i -lt $tasks.Count; $i++) {
                 $child = [System.Collections.Generic.List[object]]::new()
-                $child.Add(@{ role = 'system'; content = (Get-KakunaSystemPrompt -Subagent) })
+                $child.Add(@{ role = 'system'; content = (Get-SenseiSystemPrompt -Subagent) })
                 $child.Add(@{ role = 'user'; content = [string]$tasks[$i].prompt })
                 $r = Invoke-AgentLoop -Messages $child -MaxRounds 20 -Depth 1 -ExcludeTools @('task', 'task_parallel', 'verify')
                 "## Task $($i + 1): $($tasks[$i].description)`n$($r.FinalText)"
@@ -321,22 +321,22 @@ Register-KakunaTool -Name 'task_parallel' -ReadOnly $true `
             return ($out -join "`n`n") + "`n`n(note: ran sequentially — Start-ThreadJob unavailable)"
         }
 
-        $root = $script:KakunaRoot
+        $root = $script:SenseiRoot
         $local = $script:LocalMode
         $model = Get-ActiveModel
         $jobs = foreach ($t in $tasks) {
             Start-ThreadJob -ArgumentList $root, $local, $model, ([string]$t.prompt) -ScriptBlock {
                 param($Root, $Local, $Model, $Prompt)
-                $script:KakunaRoot = $Root; $script:KakunaVersion = 'subagent'
+                $script:SenseiRoot = $Root; $script:SenseiVersion = 'subagent'
                 $script:YoloMode = $false; $script:LocalMode = $Local; $script:PrintMode = $true; $script:PlanMode = $false
                 foreach ($f in 'render','config','input','permissions','hooks','tools','skills','tasks','logtools','prompts','openai','agent','mcp','repl') {
                     . (Join-Path $Root "src\$f.ps1")
                 }
-                Initialize-KakunaConfig
+                Initialize-SenseiConfig
                 if ($Local) { $script:Config.local_model = $Model } else { $script:Config.model = $Model }
                 $script:Messages = [System.Collections.Generic.List[object]]::new()
                 $child = [System.Collections.Generic.List[object]]::new()
-                $child.Add(@{ role = 'system'; content = (Get-KakunaSystemPrompt -Subagent) })
+                $child.Add(@{ role = 'system'; content = (Get-SenseiSystemPrompt -Subagent) })
                 $child.Add(@{ role = 'user'; content = $Prompt })
                 $r = Invoke-AgentLoop -Messages $child -MaxRounds 20 -Depth 1 -ExcludeTools @('task','task_parallel','verify')
                 return [string]$r.FinalText
@@ -349,7 +349,7 @@ Register-KakunaTool -Name 'task_parallel' -ReadOnly $true `
             "## Task $($i + 1): $($tasks[$i].description)`n$(@($res) -join "`n")"
         }
         Remove-Job -Job $jobs -Force -ErrorAction SilentlyContinue
-        Write-KakunaNote "  ◇ $($tasks.Count) parallel tasks finished"
+        Write-SenseiNote "  ◇ $($tasks.Count) parallel tasks finished"
         return ($out -join "`n`n")
     }
 
@@ -400,7 +400,7 @@ function Invoke-TranscriptTrim {
         if (-not ($Messages.Count -gt 1 -and $Messages[1].content -eq $marker)) {
             $Messages.Insert(1, @{ role = 'user'; content = $marker })
         }
-        Write-KakunaNote '(trimmed earlier conversation to stay within the context budget)'
+        Write-SenseiNote '(trimmed earlier conversation to stay within the context budget)'
     }
 }
 
@@ -461,12 +461,12 @@ function Invoke-ContextCompaction {
         $summary = $resp.choices[0].message.content
         if (-not $summary) { throw 'empty summary' }
     } catch {
-        Write-KakunaNote "(compaction failed: $($_.Exception.Message) — trimming instead)"
+        Write-SenseiNote "(compaction failed: $($_.Exception.Message) — trimming instead)"
         Invoke-TranscriptTrim $Messages
         return
     }
 
     for ($i = 1; $i -lt $cut; $i++) { $Messages.RemoveAt(1) }
     $Messages.Insert(1, @{ role = 'user'; content = "[Conversation summary — earlier messages compacted]`n$summary" })
-    Write-KakunaNote '(compacted earlier conversation)'
+    Write-SenseiNote '(compacted earlier conversation)'
 }

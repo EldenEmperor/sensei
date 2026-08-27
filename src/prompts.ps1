@@ -1,9 +1,9 @@
 # prompts.ps1 — system prompts, built at call time (cwd and memory can change).
 
-function Get-KakunaSystemPrompt {
+function Get-SenseiSystemPrompt {
     param([switch]$Subagent)
     $base = @"
-You are Kakuna, a terminal AI agent specialized in debugging logs, running inside PowerShell on Windows.
+You are Sensei, a terminal AI agent specialized in debugging logs, running inside PowerShell on Windows.
 Working directory: $((Get-Location).Path)
 
 # Method
@@ -42,7 +42,7 @@ Working directory: $((Get-Location).Path)
 
 
 # Subagent mode
-You are running as a subagent for a parent Kakuna agent. Work autonomously: you cannot ask the user questions. Your FINAL message must be a complete, self-contained report of everything you found — it is the only thing the parent agent receives.
+You are running as a subagent for a parent Sensei agent. Work autonomously: you cannot ask the user questions. Your FINAL message must be a complete, self-contained report of everything you found — it is the only thing the parent agent receives.
 "@
     }
     if ($script:PlanMode) {
@@ -53,10 +53,10 @@ You are running as a subagent for a parent Kakuna agent. Work autonomously: you 
 You are in plan mode: read-only tools only. Do NOT edit files or run commands that change state — those tools are blocked and will return an error. Research the request with read-only tools, then present a concise numbered plan of what you WOULD do and stop. When your plan is ready, call exit_plan_mode with the plan text so the user can approve it before anything executes.
 "@
     }
-    $style = Get-KakunaStyleDirective
+    $style = Get-SenseiStyleDirective
     if ($style) { $base += "`n`n# Response style`n$style" }
     $mem = ''
-    foreach ($m in Get-KakunaMemory) {
+    foreach ($m in Get-SenseiMemory) {
         $mem += "`n`n# Project memory ($($m.Path))`n$($m.Content)"
     }
     return $base + $mem
@@ -67,9 +67,9 @@ You summarize an AI agent's working conversation so it can continue with less co
 '@
 
 $script:NewSkillPrompt = @'
-Create a new Kakuna skill named '<NAME>'. Purpose: <DESC>
+Create a new Sensei skill named '<NAME>'. Purpose: <DESC>
 
-A skill is a folder .kakuna\skills\<NAME>\ (relative to the current directory) containing SKILL.md in exactly this format:
+A skill is a folder .sensei\skills\<NAME>\ (relative to the current directory) containing SKILL.md in exactly this format:
 
 ---
 name: <NAME>
@@ -82,5 +82,5 @@ If the stated purpose is vague, make sensible decisions rather than asking. Writ
 '@
 
 $script:InitPrompt = @'
-Explore the current directory and write a KAKUNA.md project-memory file for future sessions. Investigate with glob, read_file on key files, and log_stats on any log files you find. Cover: what this directory/project is, where the log files live and what formats/timestamp styles they use, common failure patterns or error templates you can see, and useful commands. Keep it under 150 lines. Write it with write_file to .\KAKUNA.md, then summarize what you recorded.
+Explore the current directory and write a SENSEI.md project-memory file for future sessions. Investigate with glob, read_file on key files, and log_stats on any log files you find. Cover: what this directory/project is, where the log files live and what formats/timestamp styles they use, common failure patterns or error templates you can see, and useful commands. Keep it under 150 lines. Write it with write_file to .\SENSEI.md, then summarize what you recorded.
 '@

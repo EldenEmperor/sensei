@@ -4,7 +4,7 @@
 $script:BackgroundTasks = [ordered]@{}
 $script:NextBgId = 0
 
-function Start-KakunaBackgroundTask {
+function Start-SenseiBackgroundTask {
     param([string]$Command)
     $script:NextBgId++
     $id = "bg$($script:NextBgId)"
@@ -50,7 +50,7 @@ function Read-TaskFileDelta {
     }
 }
 
-Register-KakunaTool -Name 'task_output' -ReadOnly $true `
+Register-SenseiTool -Name 'task_output' -ReadOnly $true `
     -Description 'Read the status and any NEW output (since the last check) of a background task started with run_in_background.' `
     -Parameters @{
         type       = 'object'
@@ -70,7 +70,7 @@ Register-KakunaTool -Name 'task_output' -ReadOnly $true `
         return $r
     }
 
-Register-KakunaTool -Name 'kill_task' -ReadOnly $false `
+Register-SenseiTool -Name 'kill_task' -ReadOnly $false `
     -Description 'Kill a running background task (and its child processes).' `
     -Parameters @{
         type       = 'object'
@@ -107,7 +107,7 @@ function Show-FinishedTaskNotes {
     foreach ($T in @($script:BackgroundTasks.Values)) {
         if ($T.Process.HasExited -and -not $T.UserNotified) {
             $T.UserNotified = $true
-            Write-KakunaNote "background task $($T.Id) finished (exit $($T.Process.ExitCode)) — $($T.Command)"
+            Write-SenseiNote "background task $($T.Id) finished (exit $($T.Process.ExitCode)) — $($T.Command)"
         }
     }
 }
@@ -116,7 +116,7 @@ function Stop-AllBackgroundTasks {
     foreach ($T in @($script:BackgroundTasks.Values)) {
         if (-not $T.Process.HasExited) {
             try { $T.Process.Kill($true) } catch { }
-            Write-KakunaNote "killed background task $($T.Id)"
+            Write-SenseiNote "killed background task $($T.Id)"
         }
     }
 }
