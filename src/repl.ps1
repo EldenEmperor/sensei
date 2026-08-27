@@ -1,45 +1,95 @@
-# repl.ps1 — the interactive loop and slash commands.
+# repl.ps1 — the interactive loop, built-in slash commands, custom commands.
 
 function Start-KakunaRepl {
     while ($true) {
-        Write-Host -NoNewline "$($script:Theme.Accent)kakuna ❯ $($script:Theme.Reset)"
-        $line = [Console]::ReadLine()
-        if ($null -eq $line) { break }   # EOF (Ctrl+Z then Enter)
+        Show-FinishedTaskNotes
+        $line = Read-KakunaInput
+        if ($null -eq $line) { break }   # EOF
         $line = $line.Trim()
         if (-not $line) { continue }
         if ($line.StartsWith('/')) {
             if (-not (Invoke-SlashCommand $line)) { break }
             continue
         }
-        Invoke-AgentTurn $line
+        try {
+            Invoke-AgentTurn $line
+        } catch [System.OperationCanceledException] {
+            Write-KakunaNote '(aborted)'
+        }
         Write-Host ''
     }
+}
+
+function Find-KakunaCustomCommand {
+    param([string]$Name)
+    $candidates = @(
+        (Join-Path (Get-Location).Path ".kakuna\commands\$Name.md")
+        (Join-Path $script:ConfigDir "commands\$Name.md")
+    )
+    foreach ($p in $candidates) {
+        if (Test-Path -LiteralPath $p -PathType Leaf) { return $p }
+    }
+    return $null
+}
+
+function Get-KakunaCustomCommandNames {
+    $names = @()
+    foreach ($dir in @((Join-Path (Get-Location).Path '.kakuna\commands'), (Join-Path $script:ConfigDir 'commands'))) {
+        if (Test-Path -LiteralPath $dir) {
+            $names += @(Get-ChildItem -LiteralPath $dir -Filter '*.md' | ForEach-Object { $_.BaseName })
+        }
+    }
+    return @($names | Select-Object -Unique)
 }
 
 function Invoke-SlashCommand {
     # Returns $false when the REPL should exit.
     param([string]$Line)
     $parts = $Line.Split(' ', 2)
-    switch ($parts[0].ToLower()) {
+    $cmd = $parts[0].ToLower()
+    $arg = if ($parts.Count -gt 1) { $parts[1].Trim() } else { '' }
+    switch ($cmd) {
         '/help' {
             Write-Host '  /help            show this help'
-            Write-Host '  /clear           save + reset the conversation'
-            Write-Host '  /model [name]    show or set the OpenAI model (setting persists to config)'
-            Write-Host '  /config          show effective config and where the API key comes from'
-            Write-Host '  /exit            quit (also /quit, or Ctrl+C)'
+            Write-Host '  /clear           save + reset the conversation (and todos)'
+            Write-Host '  /compact         summarize the conversation to reclaim context'
+            Write-Host '  /model [name]    show or set the model (setting persists to config)'
+            Write-Host '  /config          show effective config and key/mode info'
+            Write-Host '  /mcp             MCP server status and tools'
+            Write-Host '  /permissions     list allowlist rules'
+            Write-Host '  /tasks           list background tasks'
+            Write-Host '  /todos           show the current checklist'
+            Write-Host '  /cost            token usage and estimated cost'
+            Write-Host '  /memory          show loaded KAKUNA.md memory files'
+            Write-Host '  /init            explore this directory and write a KAKUNA.md'
+            Write-Host '  /resume          pick a previous session to continue'
+            Write-Host '  /exit            quit (also /quit, or Ctrl+D)'
+            $custom = Get-KakunaCustomCommandNames
+            if ($custom.Count -gt 0) {
+                Write-Host "  custom: $(($custom | ForEach-Object { "/$_" }) -join ' ')"
+            }
         }
         '/clear' {
             Save-KakunaSession
             $script:Messages.Clear()
-            $script:Messages.Add(@{ role = 'system'; content = $script:SystemPrompt })
+            $script:Messages.Add(@{ role = 'system'; content = (Get-KakunaSystemPrompt) })
+            $script:Todos = @()
             $script:TotalPromptTokens = 0
             $script:TotalCompletionTokens = 0
+            $script:SessionPath = $null
             Write-KakunaNote 'conversation cleared'
+        }
+        '/compact' {
+            try {
+                Invoke-ContextCompaction -Messages $script:Messages -Force
+            } catch [System.OperationCanceledException] {
+                Write-KakunaNote '(aborted)'
+            }
         }
         '/model' {
             $modeTag = if ($script:LocalMode) { ' (local · ollama)' } else { '' }
-            if ($parts.Count -gt 1 -and $parts[1].Trim()) {
-                Set-ActiveModel $parts[1].Trim()
+            if ($arg) {
+                Set-ActiveModel $arg
                 Write-KakunaNote "model set to $(Get-ActiveModel)$modeTag"
             } else {
                 Write-KakunaNote "current model: $(Get-ActiveModel)$modeTag"
@@ -55,10 +105,60 @@ function Invoke-SlashCommand {
                          else { 'none' }
             $mode = if ($script:LocalMode) { "local · ollama at $($script:Config.local_base_url)" } else { 'openai' }
             Write-KakunaNote "mode: $mode | api key source: $keySource | config file: $script:ConfigPath"
+            if ($script:ProjectConfig.Count -gt 0) { Write-KakunaNote "project config: $(Join-Path (Get-Location).Path '.kakuna.json')" }
+        }
+        '/mcp' { Show-McpStatus }
+        '/permissions' {
+            $rules = Get-KakunaAllowRules
+            if ($rules.Count -eq 0) {
+                Write-KakunaNote 'no allowlist rules — add "permissions": {"allow": ["run_powershell(git *)"]} to config, or answer [p] at a permission prompt'
+            } else {
+                foreach ($r in $rules) { Write-Host "  $($r.Rule)  $($script:Theme.Dim)($($r.Source))$($script:Theme.Reset)" }
+            }
+            if ($script:SessionAllowed.Count -gt 0) {
+                Write-KakunaNote "session-allowed: $(@($script:SessionAllowed) -join ', ')"
+            }
+        }
+        '/tasks' {
+            if ($script:BackgroundTasks.Count -eq 0) { Write-KakunaNote 'no background tasks' }
+            foreach ($T in $script:BackgroundTasks.Values) {
+                $status = if ($T.Process.HasExited) { "exited $($T.Process.ExitCode)" } else { 'running' }
+                $runtime = [int]((Get-Date) - $T.Started).TotalSeconds
+                Write-Host "  $($T.Id)  $status  ${runtime}s  $($script:Theme.Dim)$(Protect-TerminalText $T.Command)$($script:Theme.Reset)"
+            }
+        }
+        '/todos' { Write-KakunaTodos }
+        '/cost' {
+            Write-KakunaNote (Get-KakunaCostLine)
+            Write-KakunaNote '(cost is an estimate from a static price table; override via "prices" in config)'
+        }
+        '/memory' {
+            $mem = Get-KakunaMemory
+            if ($mem.Count -eq 0) { Write-KakunaNote 'no KAKUNA.md loaded — /init creates one for this directory' }
+            foreach ($m in $mem) { Write-Host "  $($m.Path)  $($script:Theme.Dim)($($m.Content.Length) chars)$($script:Theme.Reset)" }
+        }
+        '/init' {
+            try { Invoke-AgentTurn $script:InitPrompt }
+            catch [System.OperationCanceledException] { Write-KakunaNote '(aborted)' }
+        }
+        '/resume' {
+            Save-KakunaSession
+            Show-ResumePicker
         }
         '/exit' { return $false }
         '/quit' { return $false }
-        default { Write-KakunaNote "unknown command $($parts[0]) — try /help" }
+        default {
+            $name = $cmd.TrimStart('/')
+            $path = Find-KakunaCustomCommand $name
+            if ($path) {
+                $prompt = (Get-Content -LiteralPath $path -Raw) -replace '\$ARGUMENTS', $arg
+                Write-KakunaNote "(custom command: $path)"
+                try { Invoke-AgentTurn $prompt }
+                catch [System.OperationCanceledException] { Write-KakunaNote '(aborted)' }
+            } else {
+                Write-KakunaNote "unknown command $($parts[0]) — try /help"
+            }
+        }
     }
     return $true
 }

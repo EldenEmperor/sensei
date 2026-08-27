@@ -1,0 +1,15 @@
+data: {"choices":[{"delta":{"role":"assistant","content":"Hel"}}]}
+
+data: {"choices":[{"delta":{"content":"lo world"}}]}
+
+data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_a","function":{"name":"grep","arguments":"{\"pat"}}]}}]}
+
+data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"tern\":\"x\"}"}}]}}]}
+
+data: {"choices":[{"delta":{"tool_calls":[{"index":1,"id":"call_b","function":{"name":"glob","arguments":"{\"pattern\":\"*.log\"}"}}]}}]}
+
+data: {"choices":[{"delta":{},"finish_reason":"tool_calls"}]}
+
+data: {"choices":[],"usage":{"prompt_tokens":100,"completion_tokens":20}}
+
+data: [DONE]

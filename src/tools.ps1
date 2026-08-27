@@ -8,18 +8,22 @@ function Register-KakunaTool {
         [string]$Description,
         [hashtable]$Parameters,
         [bool]$ReadOnly,
-        [scriptblock]$Handler
+        [scriptblock]$Handler,
+        [string]$PrimaryArg = $null
     )
     $script:ToolRegistry[$Name] = @{
         Description = $Description
         Parameters  = $Parameters
         ReadOnly    = $ReadOnly
         Handler     = $Handler
+        PrimaryArg  = $PrimaryArg
     }
 }
 
 function Get-ToolSpecs {
+    param([string[]]$Exclude = @())
     $specs = foreach ($e in $script:ToolRegistry.GetEnumerator()) {
+        if ($e.Key -in $Exclude) { continue }
         @{
             type     = 'function'
             function = @{
@@ -47,7 +51,7 @@ function Resolve-KakunaPath {
 
 # --- read_file -------------------------------------------------------------
 
-Register-KakunaTool -Name 'read_file' -ReadOnly $true `
+Register-KakunaTool -Name 'read_file' -ReadOnly $true -PrimaryArg 'path' `
     -Description 'Read a text file with line numbers. Use offset/limit to page through large files. For log files prefer log_stats and log_slice.' `
     -Parameters @{
         type       = 'object'
@@ -89,7 +93,7 @@ Register-KakunaTool -Name 'read_file' -ReadOnly $true `
 
 # --- write_file ------------------------------------------------------------
 
-Register-KakunaTool -Name 'write_file' -ReadOnly $false `
+Register-KakunaTool -Name 'write_file' -ReadOnly $false -PrimaryArg 'path' `
     -Description 'Create or overwrite a text file with the given content (UTF-8, no BOM). Parent directories are created automatically.' `
     -Parameters @{
         type       = 'object'
@@ -109,7 +113,7 @@ Register-KakunaTool -Name 'write_file' -ReadOnly $false `
 
 # --- edit_file -------------------------------------------------------------
 
-Register-KakunaTool -Name 'edit_file' -ReadOnly $false `
+Register-KakunaTool -Name 'edit_file' -ReadOnly $false -PrimaryArg 'path' `
     -Description 'Replace an exact string in a file. old_string must match exactly once unless replace_all is true; include surrounding lines to make it unique.' `
     -Parameters @{
         type       = 'object'
@@ -146,7 +150,7 @@ Register-KakunaTool -Name 'edit_file' -ReadOnly $false `
 
 # --- glob ------------------------------------------------------------------
 
-Register-KakunaTool -Name 'glob' -ReadOnly $true `
+Register-KakunaTool -Name 'glob' -ReadOnly $true -PrimaryArg 'path' `
     -Description "Find files by glob pattern, newest first (max 200). '*.log' matches only the top level of the search root; '**/*.log' matches recursively." `
     -Parameters @{
         type       = 'object'
@@ -181,7 +185,7 @@ Register-KakunaTool -Name 'glob' -ReadOnly $true `
 
 # --- grep ------------------------------------------------------------------
 
-Register-KakunaTool -Name 'grep' -ReadOnly $true `
+Register-KakunaTool -Name 'grep' -ReadOnly $true -PrimaryArg 'path' `
     -Description 'Regex content search across files (case-insensitive by default). Modes: files_with_matches (default), content (file:line:text with optional context), count (per-file match counts).' `
     -Parameters @{
         type       = 'object'
@@ -251,17 +255,21 @@ Register-KakunaTool -Name 'grep' -ReadOnly $true `
 
 # --- run_powershell --------------------------------------------------------
 
-Register-KakunaTool -Name 'run_powershell' -ReadOnly $false `
-    -Description 'Run a command in a fresh non-interactive pwsh child process and return exit code, stdout, and stderr. State does not persist between calls. Default timeout 120s.' `
+Register-KakunaTool -Name 'run_powershell' -ReadOnly $false -PrimaryArg 'command' `
+    -Description 'Run a command in a fresh non-interactive pwsh child process and return exit code, stdout, and stderr. State does not persist between calls. Default timeout 120s. Set run_in_background=true for long-running commands: returns a task id immediately; check it later with task_output.' `
     -Parameters @{
         type       = 'object'
         properties = @{
-            command         = @{ type = 'string' }
-            timeout_seconds = @{ type = 'integer'; description = '1–600, default 120' }
+            command           = @{ type = 'string' }
+            timeout_seconds   = @{ type = 'integer'; description = '1–600, default 120 (foreground only)' }
+            run_in_background = @{ type = 'boolean'; description = 'Run detached and return a task id immediately (default false)' }
         }
         required   = @('command')
     } -Handler {
         param($a)
+        if ([bool]($a.run_in_background ?? $false)) {
+            return Start-KakunaBackgroundTask -Command ([string]$a.command)
+        }
         $timeoutMs = 1000 * [Math]::Min(600, [Math]::Max(1, [int]($a.timeout_seconds ?? 120)))
         $psi = [System.Diagnostics.ProcessStartInfo]::new()
         $psi.FileName = 'pwsh'
@@ -278,7 +286,7 @@ Register-KakunaTool -Name 'run_powershell' -ReadOnly $false `
             $errTask = $p.StandardError.ReadToEndAsync()
             if (-not $p.WaitForExit($timeoutMs)) {
                 try { $p.Kill($true) } catch { }
-                return "ERROR: command timed out after $($timeoutMs / 1000)s and was killed"
+                return "ERROR: command timed out after $($timeoutMs / 1000)s and was killed (use run_in_background=true for long commands)"
             }
             $p.WaitForExit()   # second wait flushes the async output streams
             $out = $outTask.GetAwaiter().GetResult()
@@ -289,5 +297,85 @@ Register-KakunaTool -Name 'run_powershell' -ReadOnly $false `
             return $result
         } finally {
             $p.Dispose()
+        }
+    }
+
+# --- todo_write ------------------------------------------------------------
+
+Register-KakunaTool -Name 'todo_write' -ReadOnly $true `
+    -Description 'Create or update the visible task checklist for multi-step work. Pass the FULL list every time (it replaces the previous one). Keep exactly one item in_progress while working.' `
+    -Parameters @{
+        type       = 'object'
+        properties = @{
+            todos = @{
+                type  = 'array'
+                items = @{
+                    type       = 'object'
+                    properties = @{
+                        content = @{ type = 'string' }
+                        status  = @{ type = 'string'; enum = @('pending', 'in_progress', 'completed') }
+                    }
+                    required   = @('content', 'status')
+                }
+            }
+        }
+        required   = @('todos')
+    } -Handler {
+        param($a)
+        $script:Todos = @($a.todos)
+        Write-KakunaTodos
+        return "Todos updated ($(@($a.todos).Count) items)"
+    }
+
+# --- web_fetch --------------------------------------------------------------
+
+function ConvertFrom-KakunaHtml {
+    param([string]$Html)
+    $t = $Html -replace '(?is)<(script|style|noscript)\b.*?</\1\s*>', ' '
+    $t = $t -replace '(?is)<!--.*?-->', ' '
+    $t = $t -replace '(?i)<(br|/p|/div|/li|/h[1-6]|/tr|/section|/article)[^>]*>', "`n"
+    $t = $t -replace '<[^>]+>', ' '
+    $t = [System.Net.WebUtility]::HtmlDecode($t)
+    $t = $t -replace '[ \t]+', ' '
+    return (($t -split "`r?`n" | ForEach-Object { $_.Trim() } | Where-Object { $_ }) -join "`n")
+}
+
+Register-KakunaTool -Name 'web_fetch' -ReadOnly $true -PrimaryArg 'url' `
+    -Description 'Fetch an http(s) URL and return its content as plain text (HTML is stripped). Use for documentation, error-message lookups, and referenced pages.' `
+    -Parameters @{
+        type       = 'object'
+        properties = @{ url = @{ type = 'string' } }
+        required   = @('url')
+    } -Handler {
+        param($a)
+        $url = [string]$a.url
+        if ($url -notmatch '^https?://') { return 'ERROR: only http(s) URLs are supported' }
+        $client = Get-KakunaHttpClient
+        $req = [System.Net.Http.HttpRequestMessage]::new([System.Net.Http.HttpMethod]::Get, $url)
+        $cts = [System.Threading.CancellationTokenSource]::new(30000)
+        try {
+            $req.Headers.UserAgent.ParseAdd("kakuna/$script:KakunaVersion")
+            $task = $client.SendAsync($req, $cts.Token)
+            Invoke-CancellableWait -Task $task -Cts $cts -Label 'fetching…'
+            $resp = $task.GetAwaiter().GetResult()
+            try {
+                if (-not $resp.IsSuccessStatusCode) { return "ERROR: HTTP $([int]$resp.StatusCode) from $url" }
+                $text = $resp.Content.ReadAsStringAsync().GetAwaiter().GetResult()
+                if ($text.Length -gt 2MB) { $text = $text.Substring(0, 2MB) }
+                $ct = ''
+                if ($resp.Content.Headers.ContentType) { $ct = [string]$resp.Content.Headers.ContentType.MediaType }
+                if ($ct -like '*html*' -or $text -match '(?i)<html') { $text = ConvertFrom-KakunaHtml $text }
+                if (-not $text.Trim()) { return "(empty page: $url)" }
+                return $text
+            } finally {
+                $resp.Dispose()
+            }
+        } catch [System.OperationCanceledException] {
+            return "ERROR: fetch of $url timed out or was aborted"
+        } catch {
+            return "ERROR: $($_.Exception.Message)"
+        } finally {
+            $req.Dispose()
+            $cts.Dispose()
         }
     }
