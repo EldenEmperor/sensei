@@ -29,11 +29,29 @@ Ask things like: `summarize what's wrong with tests\app.log` · `what happened r
 
 ## Slash commands
 
-`/help` `/clear` `/compact` `/model` `/config` `/mcp` `/permissions` `/tasks` `/todos` `/cost` `/memory` `/init` `/resume` `/exit` — plus custom commands: drop a markdown file in `.kakuna\commands\name.md` (project) or `~/.kakuna/commands/` (global), `$ARGUMENTS` is substituted, and `/name args` submits it as a prompt.
+`/help` `/clear` `/compact` `/model` `/config` `/mcp` `/permissions` `/skills` `/newskill` `/tasks` `/todos` `/cost` `/memory` `/init` `/resume` `/exit` — plus custom commands: drop a markdown file in `.kakuna\commands\name.md` (project) or `~/.kakuna/commands/` (global), `$ARGUMENTS` is substituted, and `/name args` submits it as a prompt.
+
+## Skills
+
+Packaged instruction sets the **model discovers on its own** (unlike custom commands, which only you can trigger). A skill is a folder with a `SKILL.md`:
+
+```
+.kakuna\skills\<name>\SKILL.md      (project)    ~/.kakuna/skills/<name>/SKILL.md      (global)
+```
+
+```markdown
+---
+name: triage
+description: Standard triage procedure for production incidents. Use when asked to triage a log or incident.
+---
+1. Run log_stats on every log mentioned...
+```
+
+The `skill` tool's description lists every skill's name + description, so when a request matches, the model loads it and follows it. You can also invoke one directly as `/name args` (`$ARGUMENTS` substituted). Supporting files and scripts in the skill folder are fair game — the loaded skill tells the model where they live. `/skills` lists what's available; `/newskill <name> [purpose]` has the agent write one for you.
 
 ## Tools the model gets
 
-`read_file` `write_file` `edit_file` `glob` `grep` `run_powershell` (foreground or `run_in_background` → `task_output`/`kill_task`) `task` (subagent with its own context) `todo_write` `web_fetch` `log_slice` `log_stats` — and every tool exposed by configured MCP servers as `mcp__<server>__<tool>`.
+`read_file` `write_file` `edit_file` `glob` `grep` `run_powershell` (foreground or `run_in_background` → `task_output`/`kill_task`) `task` (subagent with its own context) `todo_write` `web_fetch` `skill` (loads packaged skills) `log_slice` `log_stats` — and every tool exposed by configured MCP servers as `mcp__<server>__<tool>`.
 
 Read-only tools run without prompting; anything that writes or executes asks `[y]es/[n]o/[a]lways this session/[p]ersist to allowlist`, with a colored diff preview for edits. Ctrl+C aborts the in-flight request, not the app. Input has history and editing via PSReadLine; responses stream token-by-token.
 

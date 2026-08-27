@@ -12,7 +12,7 @@ $script:LocalMode = $false
 $script:PrintMode = $false
 $script:SessionId = 'smoke-test'
 
-foreach ($f in 'render', 'config', 'input', 'permissions', 'hooks', 'tools', 'tasks', 'logtools', 'prompts', 'openai', 'agent', 'mcp', 'repl') {
+foreach ($f in 'render', 'config', 'input', 'permissions', 'hooks', 'tools', 'skills', 'tasks', 'logtools', 'prompts', 'openai', 'agent', 'mcp', 'repl') {
     . (Join-Path $root "src\$f.ps1")
 }
 
@@ -185,6 +185,58 @@ $sp = Get-KakunaSystemPrompt
 Assert ($sp -match 'GLOBAL_MEMORY_MARKER' -and $sp -match 'Project memory') 'KAKUNA.md loaded into system prompt'
 $sp2 = Get-KakunaSystemPrompt -Subagent
 Assert ($sp2 -match 'Subagent mode') 'subagent preamble'
+
+# ============================================================ skills
+Write-Host 'skills:'
+Push-Location $tmp   # no .kakuna\skills here, temp ConfigDir has none either
+try {
+    Register-KakunaSkillTool
+    Assert (-not $script:ToolRegistry.Contains('skill')) 'skill tool absent when no skills exist'
+
+    $skillDir = Join-Path $tmp 'proj\.kakuna\skills\demo'
+    New-Item -ItemType Directory -Force -Path $skillDir | Out-Null
+    Set-Content -Path (Join-Path $skillDir 'SKILL.md') -Value @'
+---
+name: demo
+description: "Demonstrates skills. Use when asked about the demo procedure."
+---
+Follow the DEMO_PROCEDURE_MARKER steps with $ARGUMENTS.
+'@
+    Set-Content -Path (Join-Path $skillDir 'helper.txt') -Value 'helper data'
+    # bare skill: no frontmatter at all
+    $bareDir = Join-Path $tmp 'proj\.kakuna\skills\bare'
+    New-Item -ItemType Directory -Force -Path $bareDir | Out-Null
+    Set-Content -Path (Join-Path $bareDir 'SKILL.md') -Value 'BARE_BODY_MARKER only'
+    # user-level skill with the same name as the project one — project must win
+    $userSkillDir = Join-Path $script:ConfigDir 'skills\demo'
+    New-Item -ItemType Directory -Force -Path $userSkillDir | Out-Null
+    Set-Content -Path (Join-Path $userSkillDir 'SKILL.md') -Value "---`nname: demo`ndescription: user copy`n---`nUSER_COPY_MARKER"
+
+    Push-Location (Join-Path $tmp 'proj')
+    try {
+        $skills = @(Get-KakunaSkills)
+        Assert ($skills.Count -eq 2) 'skills discovered (project demo + bare)'
+        $demo = $skills | Where-Object { $_.Name -eq 'demo' }
+        Assert ($demo.Description -match 'demo procedure' -and $demo.Source -eq 'project') 'frontmatter parsed, project shadows user'
+        $bare = $skills | Where-Object { $_.Name -eq 'bare' }
+        Assert ($null -ne $bare -and $bare.Description -eq '') 'frontmatter-less skill named from folder'
+
+        Register-KakunaSkillTool
+        Assert ($script:ToolRegistry.Contains('skill')) 'skill tool registered'
+        Assert ($script:ToolRegistry['skill'].Description -match 'demo: Demonstrates') 'skill tool description lists skills'
+        $r = Invoke-Tool 'skill' @{ name = 'demo' }
+        Assert ($r -match 'DEMO_PROCEDURE_MARKER' -and $r -match [regex]::Escape($demo.Dir)) 'skill tool loads body + supporting-files path'
+        Assert ($r -notmatch 'USER_COPY_MARKER') 'shadowed user skill not loaded'
+        $r = Invoke-Tool 'skill' @{ name = 'nope' }
+        Assert ($r -match 'ERROR' -and $r -match 'demo') 'unknown skill errors with available list'
+        $p = Get-KakunaSkillPrompt -Skill $demo -Arguments 'the log file'
+        Assert ($p -match 'steps with the log file' -and $p -match '# Skill: demo') 'skill prompt substitutes $ARGUMENTS'
+        $p = Get-KakunaSkillPrompt -Skill $bare -Arguments 'xyz'
+        Assert ($p -match 'User input: xyz') 'skill prompt appends args when no placeholder'
+    } finally { Pop-Location }
+} finally { Pop-Location }
+Remove-Item -Recurse -Force (Join-Path $script:ConfigDir 'skills') -ErrorAction SilentlyContinue
+Register-KakunaSkillTool   # back to zero-skill state for later sections
 
 # ============================================================ background tasks
 Write-Host 'background tasks:'

@@ -145,6 +145,7 @@ function Invoke-AgentLoop {
 
 function Invoke-AgentTurn {
     param([string]$UserText)
+    Register-KakunaSkillTool   # cheap rescan: picks up skills created mid-session
     $hook = Invoke-KakunaHooks -Event 'UserPromptSubmit' -Prompt $UserText
     if ($hook.Block) { Write-KakunaError "prompt blocked by hook: $($hook.Reason)"; return }
     $expanded = Expand-FileReferences $UserText

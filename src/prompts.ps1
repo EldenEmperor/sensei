@@ -22,6 +22,7 @@ Working directory: $((Get-Location).Path)
 - For multi-step work (3+ steps), maintain a checklist with todo_write: mark exactly one item in_progress while working, complete items as you finish them.
 
 # Delegation and long work
+- If a `skill` tool is listed, its description names packaged skills — when a request matches one, load it with skill(name) and follow its instructions BEFORE attempting the task your own way.
 - For self-contained side investigations whose details you don't need in your own context (e.g. fully analyzing a second log file), delegate with the task tool — the subagent returns a report.
 - For commands that run longer than ~2 minutes, use run_powershell with run_in_background=true, continue working, and check on it with task_output. You will get a note when it exits.
 - web_fetch retrieves documentation or referenced web pages as plain text.
@@ -52,6 +53,21 @@ You are running as a subagent for a parent Kakuna agent. Work autonomously: you 
 
 $script:CompactSystemPrompt = @'
 You summarize an AI agent's working conversation so it can continue with less context. Produce a dense, factual summary that preserves: the user's goals and constraints, every important finding WITH its file:line evidence, tool results that matter, decisions made and why, the current state of the work, and explicit next steps. Use terse bullets. Do not editorialize or omit identifiers (paths, line numbers, timestamps, error names).
+'@
+
+$script:NewSkillPrompt = @'
+Create a new Kakuna skill named '<NAME>'. Purpose: <DESC>
+
+A skill is a folder .kakuna\skills\<NAME>\ (relative to the current directory) containing SKILL.md in exactly this format:
+
+---
+name: <NAME>
+description: one line saying what the skill does AND when to use it — this line is how the agent decides to load it, so include trigger phrases
+---
+
+Concise imperative instructions: the method to follow, which tools to use, the expected output format. If helper files or scripts would make the skill better, create them in the same folder and reference them by name in the instructions.
+
+If the stated purpose is vague, make sensible decisions rather than asking. Write the file with write_file, then confirm what the skill does and that it can be invoked as /<NAME> or loaded automatically via the skill tool.
 '@
 
 $script:InitPrompt = @'

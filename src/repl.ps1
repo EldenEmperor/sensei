@@ -57,6 +57,8 @@ function Invoke-SlashCommand {
             Write-Host '  /config          show effective config and key/mode info'
             Write-Host '  /mcp             MCP server status and tools'
             Write-Host '  /permissions     list allowlist rules'
+            Write-Host '  /skills          list available skills'
+            Write-Host '  /newskill <name> [purpose]  have the agent author a new skill'
             Write-Host '  /tasks           list background tasks'
             Write-Host '  /todos           show the current checklist'
             Write-Host '  /cost            token usage and estimated cost'
@@ -67,6 +69,10 @@ function Invoke-SlashCommand {
             $custom = Get-KakunaCustomCommandNames
             if ($custom.Count -gt 0) {
                 Write-Host "  custom: $(($custom | ForEach-Object { "/$_" }) -join ' ')"
+            }
+            $skillNames = @(Get-KakunaSkills | ForEach-Object { $_.Name })
+            if ($skillNames.Count -gt 0) {
+                Write-Host "  skills: $(($skillNames | ForEach-Object { "/$_" }) -join ' ')"
             }
         }
         '/clear' {
@@ -127,6 +133,27 @@ function Invoke-SlashCommand {
                 Write-Host "  $($T.Id)  $status  ${runtime}s  $($script:Theme.Dim)$(Protect-TerminalText $T.Command)$($script:Theme.Reset)"
             }
         }
+        '/skills' {
+            $skills = @(Get-KakunaSkills)
+            if ($skills.Count -eq 0) {
+                Write-KakunaNote 'no skills — create one with /newskill <name> [purpose], or drop a SKILL.md in .kakuna\skills\<name>\ (project) or ~/.kakuna/skills/<name>/ (global)'
+            }
+            foreach ($s in $skills) {
+                Write-Host "  /$($s.Name) — $($s.Description) $($script:Theme.Dim)($($s.Source))$($script:Theme.Reset)"
+            }
+        }
+        '/newskill' {
+            if (-not $arg) {
+                Write-KakunaNote 'usage: /newskill <name> [what it should do]'
+            } else {
+                $nsParts = $arg.Split(' ', 2)
+                $nsName = $nsParts[0]
+                $nsDesc = if ($nsParts.Count -gt 1 -and $nsParts[1].Trim()) { $nsParts[1].Trim() } else { 'decide from the name' }
+                $prompt = $script:NewSkillPrompt -replace '<NAME>', $nsName -replace '<DESC>', $nsDesc
+                try { Invoke-AgentTurn $prompt }
+                catch [System.OperationCanceledException] { Write-KakunaNote '(aborted)' }
+            }
+        }
         '/todos' { Write-KakunaTodos }
         '/cost' {
             Write-KakunaNote (Get-KakunaCostLine)
@@ -150,10 +177,15 @@ function Invoke-SlashCommand {
         default {
             $name = $cmd.TrimStart('/')
             $path = Find-KakunaCustomCommand $name
+            $skill = if (-not $path) { @(Get-KakunaSkills) | Where-Object { $_.Name -eq $name } | Select-Object -First 1 } else { $null }
             if ($path) {
                 $prompt = (Get-Content -LiteralPath $path -Raw) -replace '\$ARGUMENTS', $arg
                 Write-KakunaNote "(custom command: $path)"
                 try { Invoke-AgentTurn $prompt }
+                catch [System.OperationCanceledException] { Write-KakunaNote '(aborted)' }
+            } elseif ($skill) {
+                Write-KakunaNote "(skill: $($skill.Path))"
+                try { Invoke-AgentTurn (Get-KakunaSkillPrompt -Skill $skill -Arguments $arg) }
                 catch [System.OperationCanceledException] { Write-KakunaNote '(aborted)' }
             } else {
                 Write-KakunaNote "unknown command $($parts[0]) — try /help"
