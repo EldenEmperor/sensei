@@ -22,7 +22,7 @@ if ($PSVersionTable.PSEdition -ne 'Core' -or $PSVersionTable.PSVersion.Major -lt
 $OutputEncoding = [System.Text.UTF8Encoding]::new()
 
 $script:SenseiRoot    = $PSScriptRoot
-$script:SenseiVersion = '0.3.1'
+$script:SenseiVersion = '0.4.0'
 $script:YoloMode      = $false
 $script:LocalMode     = $false
 $script:PrintMode     = $false
@@ -64,7 +64,7 @@ for ($i = 0; $i -lt $args.Count; $i++) {
     }
 }
 
-foreach ($f in 'render', 'config', 'input', 'permissions', 'hooks', 'tools', 'skills', 'tasks', 'logtools', 'prompts', 'openai', 'agent', 'mcp', 'repl') {
+foreach ($f in 'render', 'config', 'input', 'permissions', 'hooks', 'tools', 'web', 'skills', 'tasks', 'logtools', 'prompts', 'openai', 'agent', 'mcp', 'repl') {
     . (Join-Path $script:SenseiRoot "src\$f.ps1")
 }
 
@@ -75,6 +75,8 @@ if ($script:ModelOverride) {
 }
 if (-not $script:Config.theme -or ($script:PrintMode -and [Console]::IsOutputRedirected)) {
     foreach ($k in @($script:Theme.Keys)) { $script:Theme[$k] = '' }
+} else {
+    [void](Set-SenseiAccent $script:Config.accent)
 }
 Initialize-SenseiInput
 

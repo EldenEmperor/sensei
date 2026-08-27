@@ -13,7 +13,7 @@ $script:PrintMode = $false
 $script:PlanMode = $false
 $script:SessionId = 'smoke-test'
 
-foreach ($f in 'render', 'config', 'input', 'permissions', 'hooks', 'tools', 'skills', 'tasks', 'logtools', 'prompts', 'openai', 'agent', 'mcp', 'repl') {
+foreach ($f in 'render', 'config', 'input', 'permissions', 'hooks', 'tools', 'web', 'skills', 'tasks', 'logtools', 'prompts', 'openai', 'agent', 'mcp', 'repl') {
     . (Join-Path $root "src\$f.ps1")
 }
 
@@ -316,6 +316,33 @@ Assert (-not (Request-ToolPermission -Name 'write_file' -Tool $script:ToolRegist
 Assert (Request-ToolPermission -Name 'read_file' -Tool $script:ToolRegistry['read_file'] -ToolArgs @{ path = 'x' }) 'plan mode allows read-only tools'
 Assert ((Get-SenseiSystemPrompt) -match 'Plan mode \(ACTIVE\)') 'plan mode note in system prompt'
 $script:PlanMode = $false
+
+Write-Host 'accent / theme:'
+Assert (Set-SenseiAccent 'indigo') 'accent preset resolves'
+Assert (Set-SenseiAccent '#1188ff') 'accent hex resolves'
+Assert (-not (Set-SenseiAccent 'chartreusish')) 'unknown accent rejected'
+
+Write-Host 'web helpers:'
+$html = '<html><body><nav>NAVJUNK</nav><header>HEADJUNK</header><p>Real content here.</p><a href="/sub/page">more</a><a href="https://other.com/y">ext</a><footer>FOOTJUNK</footer></body></html>'
+$txt = ConvertFrom-SenseiHtml $html
+Assert ($txt -match 'Real content' -and $txt -notmatch 'NAVJUNK' -and $txt -notmatch 'FOOTJUNK' -and $txt -notmatch 'HEADJUNK') 'html readability drops nav/header/footer'
+$links = Get-SenseiLinks -Html $html -BaseUrl 'https://site.com/a/b'
+Assert ($links -contains 'https://site.com/sub/page' -and $links -contains 'https://other.com/y') 'links resolved to absolute'
+$page = Format-SenseiPage -Content $html -ContentType 'text/html' -Url 'https://site.com/a/b'
+Assert ($page -match 'Real content' -and $page -match 'Links found') 'Format-SenseiPage appends links section'
+$json = Format-SenseiPage -Content '{"b":2,"a":1}' -ContentType 'application/json' -Url 'https://x'
+Assert ($json -match '"a": 1') 'json passthrough pretty-printed'
+
+Write-Host 'web_search parser:'
+$ddg = '<div class="result"><a class="result__a" href="/l/?kh=-1&uddg=https%3A%2F%2Fexample.com%2Fdoc%3Fx%3D1">Example <b>Doc</b></a><a class="result__snippet" href="#">A helpful snippet here</a></div>'
+$res = @(ConvertFrom-DdgResults -Html $ddg -Max 8)
+Assert ($res.Count -eq 1 -and $res[0].Title -eq 'Example Doc') 'ddg parses title (tags stripped)'
+Assert ($res[0].Url -eq 'https://example.com/doc?x=1') 'ddg decodes uddg real url'
+Assert ($res[0].Snippet -match 'helpful snippet') 'ddg pairs snippet'
+
+Write-Host 'web_browser detection:'
+$b = Find-SenseiBrowser
+Assert ($null -eq $b -or (Test-Path -LiteralPath $b)) 'browser detection returns a valid path or null'
 
 # ============================================================ background tasks
 

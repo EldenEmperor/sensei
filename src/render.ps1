@@ -1,7 +1,15 @@
 # render.ps1 — theme, banner, markdown rendering (streaming-capable), diffs, todos.
 
+$script:AccentPresets = @{
+    indigo = 0x5B8DEF
+    jade   = 0x3CB371
+    gold   = 0xE0A030
+    teal   = 0x2EC4B6
+    red    = 0xE0533D
+}
+
 $script:Theme = @{
-    Accent = $PSStyle.Foreground.FromRgb(0xE0533D)   # Sensei vermilion (torii red)
+    Accent = $PSStyle.Foreground.FromRgb($script:AccentPresets.indigo)   # Sensei accent (configurable)
     Dim    = $PSStyle.Foreground.BrightBlack
     Bold   = $PSStyle.Bold
     Err    = $PSStyle.Foreground.BrightRed
@@ -10,6 +18,25 @@ $script:Theme = @{
     Green  = $PSStyle.Foreground.Green
     CodeBg = $PSStyle.Background.FromRgb(0x1F1F1F)
     Reset  = $PSStyle.Reset
+}
+
+function Set-SenseiAccent {
+    # Resolve a preset name (indigo/jade/gold/teal/red) or a hex string
+    # (#RRGGBB or 0xRRGGBB) and repaint the accent. Returns $true on success.
+    param([string]$NameOrHex)
+    if (-not $NameOrHex) { return $false }
+    $rgb = $null
+    $key = $NameOrHex.ToLower()
+    if ($script:AccentPresets.ContainsKey($key)) {
+        $rgb = $script:AccentPresets[$key]
+    } else {
+        $hex = $NameOrHex -replace '^#', '' -replace '^0x', ''
+        if ($hex -match '^[0-9a-fA-F]{6}$') { $rgb = [Convert]::ToInt32($hex, 16) }
+    }
+    if ($null -eq $rgb) { return $false }
+    if ($script:Config -and -not $script:Config.theme) { return $true }   # theme off: stay blank
+    $script:Theme.Accent = $PSStyle.Foreground.FromRgb($rgb)
+    return $true
 }
 
 function Protect-TerminalText {

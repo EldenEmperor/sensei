@@ -36,7 +36,7 @@ Ask things like: `summarize what's wrong with tests\app.log` · `what happened r
 
 ## Slash commands
 
-`/help` `/clear` `/compact` `/plan` `/style` `/model` `/config` `/mcp` `/permissions` `/skills` `/newskill` `/tasks` `/todos` `/cost` `/memory` `/init` `/resume` `/exit` — plus custom commands: drop a markdown file in `.sensei\commands\name.md` (project) or `~/.sensei/commands/` (global), `$ARGUMENTS` is substituted, and `/name args` submits it as a prompt.
+`/help` `/clear` `/compact` `/plan` `/style` `/color` `/model` `/config` `/mcp` `/permissions` `/skills` `/newskill` `/tasks` `/todos` `/cost` `/memory` `/init` `/resume` `/exit` — plus custom commands: drop a markdown file in `.sensei\commands\name.md` (project) or `~/.sensei/commands/` (global), `$ARGUMENTS` is substituted, and `/name args` submits it as a prompt.
 
 ## Skills
 
@@ -58,7 +58,7 @@ The `skill` tool's description lists every skill's name + description, so when a
 
 ## Tools the model gets
 
-`read_file` `write_file` `edit_file` `multi_edit` (several atomic edits to one file) `glob` `grep` `run_powershell` (foreground or `run_in_background` → `task_output`/`kill_task`) `task` / `task_parallel` (subagents with their own context; up to 3 concurrent) `verify` (independent check via a fresh subagent) `todo_write` `web_fetch` `skill` (loads packaged skills) `exit_plan_mode` `log_slice` `log_stats` `log_timeline` `log_trace` `log_search` `log_baseline` — and every tool exposed by configured MCP servers as `mcp__<server>__<tool>`.
+`read_file` `write_file` `edit_file` `multi_edit` (several atomic edits to one file) `glob` `grep` `run_powershell` (foreground or `run_in_background` → `task_output`/`kill_task`) `task` / `task_parallel` (subagents with their own context; up to 3 concurrent) `verify` (independent check via a fresh subagent) `todo_write` `web_search` (find sources) `web_fetch` (read a page + its links) `web_browser` (render JS pages via headless Edge/Chrome) `skill` (loads packaged skills) `exit_plan_mode` `log_slice` `log_stats` `log_timeline` `log_trace` `log_search` `log_baseline` — and every tool exposed by configured MCP servers as `mcp__<server>__<tool>`.
 
 ### Log-debugging tools (Sensei's edge)
 
@@ -70,6 +70,18 @@ The `skill` tool's description lists every skill's name + description, so when a
 - **`log_baseline`** — `save` a known-good log's profile, then `diff` a later run to surface new error templates and count spikes. "What changed since the last good run?"
 
 Read-only tools run without prompting; anything that writes or executes asks `[y]es/[n]o/[a]lways this session/[p]ersist to allowlist`, with a colored diff preview for edits. Ctrl+C aborts the in-flight request, not the app. Input has history and editing via PSReadLine; responses stream token-by-token.
+
+## Web
+
+Sensei can reach the web with no API key (works in `--local` too):
+
+- **`web_search`** — DuckDuckGo results (title / URL / snippet) to *find* sources.
+- **`web_fetch`** — read an http(s) page as clean text (HTML stripped, JSON pretty-printed) with the links on the page listed so it can follow onward.
+- **`web_browser`** — render a JavaScript-heavy page in headless Edge/Chrome (auto-detected on Windows) and read the resulting text; optional `screenshot=true` saves a PNG for you to open.
+
+## Theme
+
+`/color [indigo|jade|gold|teal|red|#RRGGBB]` sets the accent (default **indigo**); `/style [default|concise|explanatory|teaching]` sets the response style. Both persist to config.
 
 ## MCP servers
 

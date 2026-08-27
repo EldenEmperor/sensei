@@ -25,6 +25,7 @@ $script:DefaultConfig = @{
     output_style        = 'default'
     auto_verify         = $false
     embed_model         = 'nomic-embed-text'
+    accent              = 'indigo'
 }
 
 $script:OutputStyles = @{

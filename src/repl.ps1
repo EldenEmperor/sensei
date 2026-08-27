@@ -55,6 +55,7 @@ function Invoke-SlashCommand {
             Write-Host '  /compact         summarize the conversation to reclaim context'
             Write-Host '  /plan            toggle plan mode (read-only until you approve a plan)'
             Write-Host '  /style [name]    response style: default|concise|explanatory|teaching'
+            Write-Host '  /color [name|hex] accent color: indigo|jade|gold|teal|red or #RRGGBB'
             Write-Host '  /model [name]    show or set the model (setting persists to config)'
             Write-Host '  /config          show effective config and key/mode info'
             Write-Host '  /mcp             MCP server status and tools'
@@ -110,6 +111,19 @@ function Invoke-SlashCommand {
                 }
             } else {
                 Write-SenseiNote "current style: $($script:Config.output_style) | choices: $(@($script:OutputStyles.Keys) -join ', ')"
+            }
+        }
+        '/color' {
+            if ($arg) {
+                if (Set-SenseiAccent $arg) {
+                    $script:Config.accent = $arg.ToLower()
+                    Save-SenseiConfig
+                    Write-Host "$($script:Theme.Accent)accent color set to $($script:Config.accent)$($script:Theme.Reset)"
+                } else {
+                    Write-SenseiNote "unknown color '$arg' — presets: $(@($script:AccentPresets.Keys) -join ', ') or a #RRGGBB hex"
+                }
+            } else {
+                Write-SenseiNote "current accent: $($script:Config.accent) | presets: $(@($script:AccentPresets.Keys) -join ', ') or #RRGGBB"
             }
         }
         '/model' {
