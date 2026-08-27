@@ -22,10 +22,11 @@ if ($PSVersionTable.PSEdition -ne 'Core' -or $PSVersionTable.PSVersion.Major -lt
 $OutputEncoding = [System.Text.UTF8Encoding]::new()
 
 $script:KakunaRoot    = $PSScriptRoot
-$script:KakunaVersion = '0.2.1'
+$script:KakunaVersion = '0.3.0'
 $script:YoloMode      = $false
 $script:LocalMode     = $false
 $script:PrintMode     = $false
+$script:PlanMode      = $false
 $script:ModelOverride = $null
 $script:PrintPrompt   = $null
 $script:ResumeFlag    = $false
@@ -39,6 +40,8 @@ for ($i = 0; $i -lt $args.Count; $i++) {
         $script:LocalMode = $true
     } elseif ($arg -match '^--?resume$') {
         $script:ResumeFlag = $true
+    } elseif ($arg -match '^--?plan$') {
+        $script:PlanMode = $true
     } elseif ($arg -match '^(-p|--print)$') {
         if ($i + 1 -lt $args.Count) { $script:PrintPrompt = [string]$args[++$i]; $script:PrintMode = $true }
         else { Write-Host 'kakuna: -p requires a prompt'; exit 1 }
@@ -52,6 +55,7 @@ for ($i = 0; $i -lt $args.Count; $i++) {
         Write-Host '  --model <name>  override the configured model for this session'
         Write-Host '  --yolo          skip all tool permission prompts (alias: --dangerously-skip-permissions)'
         Write-Host '  --resume        pick a previous session to continue'
+        Write-Host '  --plan          start in plan mode (read-only until you approve a plan)'
         Write-Host '  -p <prompt>     print mode: run one prompt non-interactively and exit'
         exit 0
     } else {

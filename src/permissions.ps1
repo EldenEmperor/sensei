@@ -74,7 +74,9 @@ function Request-ToolPermission {
         [hashtable]$Tool,
         [hashtable]$ToolArgs
     )
-    if ($Tool.ReadOnly -or $script:YoloMode -or $script:SessionAllowed.Contains($Name)) { return $true }
+    if ($Tool.ReadOnly) { return $true }
+    if ($script:PlanMode) { return $false }   # plan mode is read-only until a plan is approved
+    if ($script:YoloMode -or $script:SessionAllowed.Contains($Name)) { return $true }
     if (Test-KakunaAllowlist -Name $Name -Tool $Tool -ToolArgs $ToolArgs) { return $true }
     if ($script:PrintMode -or [Console]::IsInputRedirected) { return $false }   # non-interactive: deny
 

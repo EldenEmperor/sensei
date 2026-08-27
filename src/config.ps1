@@ -22,6 +22,16 @@ $script:DefaultConfig = @{
     permissions         = @{ allow = @() }
     hooks               = @()
     prices              = @{}
+    output_style        = 'default'
+    auto_verify         = $false
+    embed_model         = 'nomic-embed-text'
+}
+
+$script:OutputStyles = @{
+    default     = ''
+    concise     = 'Answer as tersely as correctness allows: lead with the conclusion, minimal prose, no preamble.'
+    explanatory = 'Explain your reasoning as you go: state what you checked, why, and what it implies, so the reader learns the debugging path.'
+    teaching    = 'Teach as you answer: define the concepts and PowerShell/log techniques involved, and note what the reader should look for next time.'
 }
 
 # $/1M tokens (input, output) — estimates; override via config "prices": {"model": [in, out]}
@@ -118,18 +128,52 @@ function Get-KakunaHooks {
 
 function Get-KakunaMemory {
     $out = @()
-    $candidates = @(
-        (Join-Path $script:ConfigDir 'KAKUNA.md')
-        (Join-Path (Get-Location).Path 'KAKUNA.md')
-    )
+    # global first, then every KAKUNA.md from the drive root down to cwd
+    # (nearest last so more-specific memory wins when the model reads top-to-bottom)
+    $candidates = @(Join-Path $script:ConfigDir 'KAKUNA.md')
+    $chain = @()
+    $dir = (Get-Location).Path
+    while ($dir) {
+        $chain += (Join-Path $dir 'KAKUNA.md')
+        $parent = Split-Path -Parent $dir
+        if (-not $parent -or $parent -eq $dir) { break }
+        $dir = $parent
+    }
+    [array]::Reverse($chain)
+    $candidates += $chain
+    $seen = [System.Collections.Generic.HashSet[string]]::new()
     foreach ($p in $candidates) {
+        if (-not $seen.Add($p.ToLower())) { continue }
         if (Test-Path -LiteralPath $p -PathType Leaf) {
-            $content = Get-Content -LiteralPath $p -Raw
-            if ($content.Length -gt 20000) { $content = $content.Substring(0, 20000) + "`n[truncated]" }
+            $content = Read-KakunaMemoryFile -Path $p
             $out += @{ Path = $p; Content = $content }
         }
     }
     return $out
+}
+
+function Read-KakunaMemoryFile {
+    # Read a KAKUNA.md, resolving one level of `@relative/path.md` import lines.
+    param([string]$Path, [int]$Depth = 0)
+    $content = Get-Content -LiteralPath $Path -Raw
+    if ($content.Length -gt 20000) { $content = $content.Substring(0, 20000) + "`n[truncated]" }
+    if ($Depth -ge 1) { return $content }
+    $baseDir = Split-Path -Parent $Path
+    $lines = foreach ($line in ($content -split "`r?`n")) {
+        if ($line -match '^\s*@([^\s]+\.md)\s*$') {
+            $imp = Join-Path $baseDir $Matches[1]
+            if (Test-Path -LiteralPath $imp -PathType Leaf) {
+                "<!-- imported $($Matches[1]) -->`n" + (Read-KakunaMemoryFile -Path $imp -Depth ($Depth + 1))
+            } else { $line }
+        } else { $line }
+    }
+    return ($lines -join "`n")
+}
+
+function Get-KakunaStyleDirective {
+    $style = [string]$script:Config.output_style
+    if ($script:OutputStyles.ContainsKey($style)) { return $script:OutputStyles[$style] }
+    return ''
 }
 
 # --- cost -------------------------------------------------------------------

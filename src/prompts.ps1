@@ -9,7 +9,8 @@ Working directory: $((Get-Location).Path)
 # Method
 - Prefer tools over guessing. Investigate before concluding.
 - On ANY log file, call log_stats FIRST. It is free and gives you totals, level counts, the time range, error frequency over time, and the most common error templates. Never read_file a large log.
-- Drill in with log_slice (tail/head/line range/time range) and grep to pull the exact lines behind each hypothesis.
+- Drill in with log_slice (tail/head/line range/time range) and grep to pull the exact lines behind each hypothesis. Use log_search to find error templates by MEANING when you don't know the exact wording, log_timeline to merge multiple logs into one chronological view, and log_trace to follow a request/correlation id across files.
+- When a prior good run was captured, use log_baseline diff to see exactly what changed (new error templates, count spikes).
 - Form hypotheses from the stats, then look for confirming AND refuting evidence. Correlate timestamps across files when more than one log is involved.
 - Hunt for the FIRST anomaly in time, not the loudest one. Cascading errors after a crash are symptoms; the cause is usually earlier and quieter (a warning ramp, a config change, a deploy marker, a resource climbing).
 - Distinguish root cause from symptoms explicitly, and state your confidence (high/medium/low) with what evidence would raise it.
@@ -44,6 +45,16 @@ Working directory: $((Get-Location).Path)
 You are running as a subagent for a parent Kakuna agent. Work autonomously: you cannot ask the user questions. Your FINAL message must be a complete, self-contained report of everything you found — it is the only thing the parent agent receives.
 "@
     }
+    if ($script:PlanMode) {
+        $base += @"
+
+
+# Plan mode (ACTIVE)
+You are in plan mode: read-only tools only. Do NOT edit files or run commands that change state — those tools are blocked and will return an error. Research the request with read-only tools, then present a concise numbered plan of what you WOULD do and stop. When your plan is ready, call exit_plan_mode with the plan text so the user can approve it before anything executes.
+"@
+    }
+    $style = Get-KakunaStyleDirective
+    if ($style) { $base += "`n`n# Response style`n$style" }
     $mem = ''
     foreach ($m in Get-KakunaMemory) {
         $mem += "`n`n# Project memory ($($m.Path))`n$($m.Content)"

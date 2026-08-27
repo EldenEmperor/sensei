@@ -45,6 +45,10 @@ function Invoke-KakunaToolCall {
     if ($hook.Block) { return "ERROR: blocked by PreToolUse hook: $($hook.Reason)" }
 
     if (-not (Request-ToolPermission -Name $name -Tool $tool -ToolArgs $toolArgs)) {
+        if ($script:PlanMode) {
+            Write-KakunaNote '  (plan mode: blocked)'
+            return "ERROR: plan mode is read-only — you cannot run $name yet. Finish researching, then call exit_plan_mode with your plan for the user to approve."
+        }
         Write-KakunaNote '  denied'
         if ($script:PrintMode -or [Console]::IsInputRedirected) {
             return 'ERROR: permission denied (non-interactive mode; rerun with --yolo or add an allowlist rule)'
@@ -151,11 +155,38 @@ function Invoke-AgentTurn {
     $expanded = Expand-FileReferences $UserText
     $script:Messages.Add(@{ role = 'user'; content = $expanded })
     Add-BackgroundTaskNotices -Messages $script:Messages
+    $startCount = $script:Messages.Count
     $r = Invoke-AgentLoop -Messages $script:Messages -MaxRounds $script:MaxToolRounds -Depth 0 -AllowStream
     if (-not $r.Aborted) {
+        Invoke-AutoVerify -StartIndex $startCount
         Write-Host ''
         Write-KakunaNote (Get-KakunaCostLine)
         [void](Invoke-KakunaHooks -Event 'Stop' -LastMessage ([string]$r.FinalText))
+    }
+}
+
+function Invoke-AutoVerify {
+    # If auto_verify is on and this turn wrote to files, run one independent
+    # verifier over the changes and surface its verdict.
+    param([int]$StartIndex)
+    if (-not $script:Config.auto_verify -or $script:PlanMode) { return }
+    $writeTools = 'write_file', 'edit_file', 'multi_edit'
+    $wrote = $false
+    for ($i = $StartIndex; $i -lt $script:Messages.Count; $i++) {
+        $m = $script:Messages[$i]
+        if ($m.role -eq 'assistant' -and $m.tool_calls) {
+            foreach ($tc in @($m.tool_calls)) { if ([string]$tc.function.name -in $writeTools) { $wrote = $true } }
+        }
+    }
+    if (-not $wrote) { return }
+    Write-KakunaNote 'auto-verify: checking the changes…'
+    $child = [System.Collections.Generic.List[object]]::new()
+    $child.Add(@{ role = 'system'; content = (Get-KakunaSystemPrompt -Subagent) })
+    $child.Add(@{ role = 'user'; content = 'The agent just modified one or more files in this directory to satisfy the user. Inspect the current state of those files with read-only tools and judge whether the change is correct and complete. Reply starting with PASS or FAIL, then brief evidence.' })
+    $r = Invoke-AgentLoop -Messages $child -MaxRounds 12 -Depth 1 -ExcludeTools @('task', 'task_parallel', 'verify', 'exit_plan_mode')
+    if ($r.FinalText) {
+        Write-Host ''
+        Write-Host "$($script:Theme.Accent)auto-verify:$($script:Theme.Reset) $(Protect-TerminalText ([string]$r.FinalText))"
     }
 }
 
@@ -197,11 +228,129 @@ Register-KakunaTool -Name 'task' -ReadOnly $true `
         $child = [System.Collections.Generic.List[object]]::new()
         $child.Add(@{ role = 'system'; content = (Get-KakunaSystemPrompt -Subagent) })
         $child.Add(@{ role = 'user'; content = [string]$a.prompt })
-        $r = Invoke-AgentLoop -Messages $child -MaxRounds 25 -Depth 1 -ExcludeTools @('task')
+        $r = Invoke-AgentLoop -Messages $child -MaxRounds 25 -Depth 1 -ExcludeTools @('task', 'task_parallel', 'verify', 'exit_plan_mode')
         if ($r.Aborted) { return 'ERROR: subagent aborted by user' }
         if (-not $r.FinalText) { return 'ERROR: subagent returned no result' }
         Write-KakunaNote "  ◇ subagent finished ($($r.Rounds) rounds)"
         return [string]$r.FinalText
+    }
+
+# --- verify (independent check via a fresh subagent) -----------------------
+
+Register-KakunaTool -Name 'verify' -ReadOnly $true `
+    -Description 'Independently verify a claim or that a change is correct. Spawns a fresh subagent with read-only tools that checks the claim against the actual files/logs and reports PASS or FAIL with evidence. Use before asserting something important is fixed or true.' `
+    -Parameters @{
+        type       = 'object'
+        properties = @{ claim = @{ type = 'string'; description = 'The specific claim to verify' } }
+        required   = @('claim')
+    } -Handler {
+        param($a)
+        Write-Host "$($script:Theme.Accent)◇ verify: $(Protect-TerminalText ([string]$a.claim))$($script:Theme.Reset)"
+        $child = [System.Collections.Generic.List[object]]::new()
+        $child.Add(@{ role = 'system'; content = (Get-KakunaSystemPrompt -Subagent) })
+        $child.Add(@{ role = 'user'; content = "Independently verify this claim by inspecting the actual files/logs with read-only tools. Do not assume it is true. Reply starting with PASS or FAIL, then the evidence (path:line):`n`n$($a.claim)" })
+        $r = Invoke-AgentLoop -Messages $child -MaxRounds 15 -Depth 1 -ExcludeTools @('task', 'verify', 'task_parallel')
+        if ($r.Aborted) { return 'ERROR: verification aborted' }
+        Write-KakunaNote '  ◇ verify finished'
+        return [string]$r.FinalText
+    }
+
+# --- exit_plan_mode --------------------------------------------------------
+
+Register-KakunaTool -Name 'exit_plan_mode' -ReadOnly $true `
+    -Description 'Call this when, in plan mode, your plan is ready. Presents the plan to the user for approval; if approved, plan mode ends and you may execute it.' `
+    -Parameters @{
+        type       = 'object'
+        properties = @{ plan = @{ type = 'string'; description = 'The plan, as a concise numbered list' } }
+        required   = @('plan')
+    } -Handler {
+        param($a)
+        if (-not $script:PlanMode) { return 'Not in plan mode; nothing to exit.' }
+        Write-Host ''
+        Write-Host "$($script:Theme.Bold)$($script:Theme.Accent)Proposed plan:$($script:Theme.Reset)"
+        Write-KakunaMarkdown ([string]$a.plan)
+        Write-Host ''
+        if ($script:PrintMode -or [Console]::IsInputRedirected) {
+            return 'Plan recorded (non-interactive; still in plan mode — the user will review).'
+        }
+        $ans = (Read-Host '  Approve this plan and let Kakuna execute it? [y/N]').Trim().ToLower()
+        if ($ans -in 'y', 'yes') {
+            $script:PlanMode = $false
+            return 'APPROVED — plan mode is now off. Proceed to execute the plan.'
+        }
+        return 'The user did NOT approve the plan. Stay in plan mode; ask what they want to change.'
+    }
+
+# --- task_parallel (bounded concurrent subagents) --------------------------
+
+Register-KakunaTool -Name 'task_parallel' -ReadOnly $true `
+    -Description 'Run up to 3 independent subagent investigations concurrently and return all their reports. Use for genuinely independent side-work (e.g. analyzing several logs at once). Each runs in isolation and cannot ask the user questions.' `
+    -Parameters @{
+        type       = 'object'
+        properties = @{
+            tasks = @{
+                type  = 'array'
+                items = @{
+                    type       = 'object'
+                    properties = @{
+                        description = @{ type = 'string' }
+                        prompt      = @{ type = 'string' }
+                    }
+                    required   = @('description', 'prompt')
+                }
+            }
+        }
+        required   = @('tasks')
+    } -Handler {
+        param($a)
+        $tasks = @($a.tasks)
+        if ($tasks.Count -eq 0) { return 'ERROR: no tasks provided' }
+        if ($tasks.Count -gt 3) { $tasks = $tasks[0..2] }
+        foreach ($t in $tasks) { Write-Host "$($script:Theme.Accent)◇ parallel task: $(Protect-TerminalText ([string]$t.description))$($script:Theme.Reset)" }
+
+        $canThread = $null -ne (Get-Command Start-ThreadJob -ErrorAction SilentlyContinue)
+        if (-not $canThread) {
+            # sequential fallback — still correct, just not concurrent
+            $out = for ($i = 0; $i -lt $tasks.Count; $i++) {
+                $child = [System.Collections.Generic.List[object]]::new()
+                $child.Add(@{ role = 'system'; content = (Get-KakunaSystemPrompt -Subagent) })
+                $child.Add(@{ role = 'user'; content = [string]$tasks[$i].prompt })
+                $r = Invoke-AgentLoop -Messages $child -MaxRounds 20 -Depth 1 -ExcludeTools @('task', 'task_parallel', 'verify')
+                "## Task $($i + 1): $($tasks[$i].description)`n$($r.FinalText)"
+            }
+            return ($out -join "`n`n") + "`n`n(note: ran sequentially — Start-ThreadJob unavailable)"
+        }
+
+        $root = $script:KakunaRoot
+        $local = $script:LocalMode
+        $model = Get-ActiveModel
+        $jobs = foreach ($t in $tasks) {
+            Start-ThreadJob -ArgumentList $root, $local, $model, ([string]$t.prompt) -ScriptBlock {
+                param($Root, $Local, $Model, $Prompt)
+                $script:KakunaRoot = $Root; $script:KakunaVersion = 'subagent'
+                $script:YoloMode = $false; $script:LocalMode = $Local; $script:PrintMode = $true; $script:PlanMode = $false
+                foreach ($f in 'render','config','input','permissions','hooks','tools','skills','tasks','logtools','prompts','openai','agent','mcp','repl') {
+                    . (Join-Path $Root "src\$f.ps1")
+                }
+                Initialize-KakunaConfig
+                if ($Local) { $script:Config.local_model = $Model } else { $script:Config.model = $Model }
+                $script:Messages = [System.Collections.Generic.List[object]]::new()
+                $child = [System.Collections.Generic.List[object]]::new()
+                $child.Add(@{ role = 'system'; content = (Get-KakunaSystemPrompt -Subagent) })
+                $child.Add(@{ role = 'user'; content = $Prompt })
+                $r = Invoke-AgentLoop -Messages $child -MaxRounds 20 -Depth 1 -ExcludeTools @('task','task_parallel','verify')
+                return [string]$r.FinalText
+            }
+        }
+        $null = Wait-Job -Job $jobs -Timeout 600
+        $out = for ($i = 0; $i -lt $tasks.Count; $i++) {
+            $res = try { Receive-Job -Job $jobs[$i] -ErrorAction Stop } catch { "ERROR: $($_.Exception.Message)" }
+            if ($jobs[$i].State -eq 'Running') { $res = '(timed out)'; Stop-Job -Job $jobs[$i] }
+            "## Task $($i + 1): $($tasks[$i].description)`n$(@($res) -join "`n")"
+        }
+        Remove-Job -Job $jobs -Force -ErrorAction SilentlyContinue
+        Write-KakunaNote "  ◇ $($tasks.Count) parallel tasks finished"
+        return ($out -join "`n`n")
     }
 
 # --- context management -----------------------------------------------------

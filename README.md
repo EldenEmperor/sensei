@@ -16,20 +16,21 @@ A terminal AI agent for debugging logs, written in PowerShell 7 — a Claude Cod
 ## Usage
 
 ```
-kakuna [--local] [--model <name>] [--yolo] [--resume] [-p <prompt>]
+kakuna [--local] [--model <name>] [--yolo] [--resume] [--plan] [-p <prompt>]
 ```
 
 - `--local` — local Ollama model instead of OpenAI (no API key)
 - `--model` — override the model for this session
 - `--yolo` — skip all permission prompts
 - `--resume` — pick a previous session to continue
+- `--plan` — start in plan mode: read-only until you approve a plan
 - `-p "prompt"` — print mode: one non-interactive turn, answer to stdout (read-only + allowlisted tools only)
 
 Ask things like: `summarize what's wrong with tests\app.log` · `what happened right before the crash at 02:47?` · `tail the service log while I reproduce this` (`@file` references inline a file into your message).
 
 ## Slash commands
 
-`/help` `/clear` `/compact` `/model` `/config` `/mcp` `/permissions` `/skills` `/newskill` `/tasks` `/todos` `/cost` `/memory` `/init` `/resume` `/exit` — plus custom commands: drop a markdown file in `.kakuna\commands\name.md` (project) or `~/.kakuna/commands/` (global), `$ARGUMENTS` is substituted, and `/name args` submits it as a prompt.
+`/help` `/clear` `/compact` `/plan` `/style` `/model` `/config` `/mcp` `/permissions` `/skills` `/newskill` `/tasks` `/todos` `/cost` `/memory` `/init` `/resume` `/exit` — plus custom commands: drop a markdown file in `.kakuna\commands\name.md` (project) or `~/.kakuna/commands/` (global), `$ARGUMENTS` is substituted, and `/name args` submits it as a prompt.
 
 ## Skills
 
@@ -51,7 +52,16 @@ The `skill` tool's description lists every skill's name + description, so when a
 
 ## Tools the model gets
 
-`read_file` `write_file` `edit_file` `glob` `grep` `run_powershell` (foreground or `run_in_background` → `task_output`/`kill_task`) `task` (subagent with its own context) `todo_write` `web_fetch` `skill` (loads packaged skills) `log_slice` `log_stats` — and every tool exposed by configured MCP servers as `mcp__<server>__<tool>`.
+`read_file` `write_file` `edit_file` `multi_edit` (several atomic edits to one file) `glob` `grep` `run_powershell` (foreground or `run_in_background` → `task_output`/`kill_task`) `task` / `task_parallel` (subagents with their own context; up to 3 concurrent) `verify` (independent check via a fresh subagent) `todo_write` `web_fetch` `skill` (loads packaged skills) `exit_plan_mode` `log_slice` `log_stats` `log_timeline` `log_trace` `log_search` `log_baseline` — and every tool exposed by configured MCP servers as `mcp__<server>__<tool>`.
+
+### Log-debugging tools (Kakuna's edge)
+
+- **`log_stats`** — one-pass profile: level counts, time range, error-frequency-over-time, top error templates. Always called first.
+- **`log_slice`** — tail/head/line-range/time-range of a huge file, streamed, never loaded whole.
+- **`log_timeline`** — merge 2+ logs into one timestamp-ordered view, each line tagged by source. "What did every service say at the moment of the crash?"
+- **`log_trace`** — follow a request/correlation id across all logs, in order.
+- **`log_search`** — *semantic* search over a log's error templates via your local Ollama embedding model (`--local`). Find by meaning ("memory pressure") when you don't know the exact wording. No cloud tool can search your logs on your own GPU.
+- **`log_baseline`** — `save` a known-good log's profile, then `diff` a later run to surface new error templates and count spikes. "What changed since the last good run?"
 
 Read-only tools run without prompting; anything that writes or executes asks `[y]es/[n]o/[a]lways this session/[p]ersist to allowlist`, with a colored diff preview for edits. Ctrl+C aborts the in-flight request, not the app. Input has history and editing via PSReadLine; responses stream token-by-token.
 

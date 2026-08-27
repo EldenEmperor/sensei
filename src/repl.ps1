@@ -53,6 +53,8 @@ function Invoke-SlashCommand {
             Write-Host '  /help            show this help'
             Write-Host '  /clear           save + reset the conversation (and todos)'
             Write-Host '  /compact         summarize the conversation to reclaim context'
+            Write-Host '  /plan            toggle plan mode (read-only until you approve a plan)'
+            Write-Host '  /style [name]    response style: default|concise|explanatory|teaching'
             Write-Host '  /model [name]    show or set the model (setting persists to config)'
             Write-Host '  /config          show effective config and key/mode info'
             Write-Host '  /mcp             MCP server status and tools'
@@ -90,6 +92,24 @@ function Invoke-SlashCommand {
                 Invoke-ContextCompaction -Messages $script:Messages -Force
             } catch [System.OperationCanceledException] {
                 Write-KakunaNote '(aborted)'
+            }
+        }
+        '/plan' {
+            $script:PlanMode = -not $script:PlanMode
+            if ($script:PlanMode) { Write-KakunaNote 'plan mode ON — read-only; the agent will propose a plan for you to approve' }
+            else { Write-KakunaNote 'plan mode OFF — the agent can edit and run commands again' }
+        }
+        '/style' {
+            if ($arg) {
+                if ($script:OutputStyles.ContainsKey($arg)) {
+                    $script:Config.output_style = $arg
+                    Save-KakunaConfig
+                    Write-KakunaNote "response style set to $arg"
+                } else {
+                    Write-KakunaNote "unknown style '$arg' — choices: $(@($script:OutputStyles.Keys) -join ', ')"
+                }
+            } else {
+                Write-KakunaNote "current style: $($script:Config.output_style) | choices: $(@($script:OutputStyles.Keys) -join ', ')"
             }
         }
         '/model' {

@@ -148,6 +148,57 @@ Register-KakunaTool -Name 'edit_file' -ReadOnly $false -PrimaryArg 'path' `
         return "Edited $path ($count replacement$(if ($count -ne 1) { 's' }))"
     }
 
+# --- multi_edit ------------------------------------------------------------
+
+Register-KakunaTool -Name 'multi_edit' -ReadOnly $false -PrimaryArg 'path' `
+    -Description 'Apply several exact-string edits to one file atomically, in order. Each edit follows edit_file rules (old_string unique unless replace_all). If ANY edit fails to match, the file is left unchanged and an error names the failing edit.' `
+    -Parameters @{
+        type       = 'object'
+        properties = @{
+            path  = @{ type = 'string' }
+            edits = @{
+                type  = 'array'
+                items = @{
+                    type       = 'object'
+                    properties = @{
+                        old_string  = @{ type = 'string' }
+                        new_string  = @{ type = 'string' }
+                        replace_all = @{ type = 'boolean' }
+                    }
+                    required   = @('old_string', 'new_string')
+                }
+            }
+        }
+        required   = @('path', 'edits')
+    } -Handler {
+        param($a)
+        $path = Resolve-KakunaPath $a.path
+        if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { return "ERROR: file not found: $path" }
+        $edits = @($a.edits)
+        if ($edits.Count -eq 0) { return 'ERROR: no edits provided' }
+        $text = [System.IO.File]::ReadAllText($path)
+        $applied = 0
+        for ($i = 0; $i -lt $edits.Count; $i++) {
+            $old = [string]$edits[$i].old_string
+            $new = [string]$edits[$i].new_string
+            if ($old -eq '') { return "ERROR: edit #$($i + 1): old_string must not be empty (no changes written)" }
+            $count = [regex]::Matches($text, [regex]::Escape($old)).Count
+            if ($count -eq 0) { return "ERROR: edit #$($i + 1): old_string not found (no changes written)" }
+            $replaceAll = [bool]($edits[$i].replace_all ?? $false)
+            if ($count -gt 1 -and -not $replaceAll) {
+                return "ERROR: edit #$($i + 1): old_string occurs $count times; add context or set replace_all (no changes written)"
+            }
+            if ($replaceAll) { $text = $text.Replace($old, $new) }
+            else {
+                $idx = $text.IndexOf($old, [System.StringComparison]::Ordinal)
+                $text = $text.Substring(0, $idx) + $new + $text.Substring($idx + $old.Length)
+            }
+            $applied++
+        }
+        [System.IO.File]::WriteAllText($path, $text)
+        return "Applied $applied edit(s) to $path"
+    }
+
 # --- glob ------------------------------------------------------------------
 
 Register-KakunaTool -Name 'glob' -ReadOnly $true -PrimaryArg 'path' `

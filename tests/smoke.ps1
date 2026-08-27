@@ -10,6 +10,7 @@ $script:KakunaVersion = '0.0.0-test'
 $script:YoloMode = $true
 $script:LocalMode = $false
 $script:PrintMode = $false
+$script:PlanMode = $false
 $script:SessionId = 'smoke-test'
 
 foreach ($f in 'render', 'config', 'input', 'permissions', 'hooks', 'tools', 'skills', 'tasks', 'logtools', 'prompts', 'openai', 'agent', 'mcp', 'repl') {
@@ -237,6 +238,86 @@ Follow the DEMO_PROCEDURE_MARKER steps with $ARGUMENTS.
 } finally { Pop-Location }
 Remove-Item -Recurse -Force (Join-Path $script:ConfigDir 'skills') -ErrorAction SilentlyContinue
 Register-KakunaSkillTool   # back to zero-skill state for later sections
+
+# ============================================================ v0.3 features
+Write-Host 'output styles:'
+$script:Config.output_style = 'concise'
+Assert ((Get-KakunaSystemPrompt) -match 'tersely as correctness') 'output style injected into system prompt'
+$script:Config.output_style = 'default'
+Assert ((Get-KakunaStyleDirective) -eq '') 'default style is empty'
+
+Write-Host 'multi_edit (atomic):'
+$mf = Join-Path $tmp 'multi.txt'
+Set-Content -Path $mf -Value "one`ntwo`nthree" -NoNewline
+$r = Invoke-Tool 'multi_edit' @{ path = $mf; edits = @(@{ old_string = 'one'; new_string = 'ONE' }, @{ old_string = 'three'; new_string = 'THREE' }) }
+Assert ($r -match 'Applied 2') 'multi_edit applies all edits'
+Assert ((Get-Content -Raw $mf) -match 'ONE' -and (Get-Content -Raw $mf) -match 'THREE') 'multi_edit changes on disk'
+Set-Content -Path $mf -Value "alpha`nbeta" -NoNewline
+$r = Invoke-Tool 'multi_edit' @{ path = $mf; edits = @(@{ old_string = 'alpha'; new_string = 'A' }, @{ old_string = 'nope'; new_string = 'X' }) }
+Assert ($r -match 'ERROR' -and $r -match 'edit #2') 'multi_edit reports failing edit'
+Assert ((Get-Content -Raw $mf) -eq "alpha`nbeta") 'multi_edit atomic: file unchanged on failure'
+
+Write-Host 'memory up-tree + import:'
+$deep = Join-Path $tmp 'mem\a\b'
+New-Item -ItemType Directory -Force -Path $deep | Out-Null
+Set-Content -Path (Join-Path $tmp 'mem\a\KAKUNA.md') -Value 'PARENT_MEM'
+Set-Content -Path (Join-Path $deep 'shared.md') -Value 'IMPORTED_MEM'
+Set-Content -Path (Join-Path $deep 'KAKUNA.md') -Value "CHILD_MEM`n@shared.md"
+Push-Location $deep
+try {
+    $mem = Get-KakunaMemory
+    $joined = ($mem | ForEach-Object { $_.Content }) -join "`n"
+    Assert ($joined -match 'PARENT_MEM' -and $joined -match 'CHILD_MEM') 'memory walks up-tree'
+    Assert ($joined -match 'IMPORTED_MEM') 'memory resolves @import'
+    $childIdx = ($mem.Path | ForEach-Object { $_ }) -join '|'
+    Assert (($mem[-1].Content) -match 'CHILD_MEM') 'nearest memory is last (wins)'
+} finally { Pop-Location }
+
+Write-Host 'log_timeline / log_trace:'
+$logA = Join-Path $tmp 'a.log'; $logB = Join-Path $tmp 'b.log'
+Set-Content -Path $logA -Value "2026-01-01 00:00:01 [INFO] A-one`n2026-01-01 00:00:03 [INFO] A-three req-ZZZ"
+Set-Content -Path $logB -Value "2026-01-01 00:00:02 [INFO] B-two req-ZZZ`n2026-01-01 00:00:04 [INFO] B-four"
+$r = Invoke-Tool 'log_timeline' @{ paths = @($logA, $logB) }
+$iA1 = $r.IndexOf('A-one'); $iB2 = $r.IndexOf('B-two'); $iA3 = $r.IndexOf('A-three'); $iB4 = $r.IndexOf('B-four')
+Assert ($iA1 -lt $iB2 -and $iB2 -lt $iA3 -and $iA3 -lt $iB4) 'log_timeline merges by timestamp'
+Assert ($r -match '\[a\.log\]' -and $r -match '\[b\.log\]') 'log_timeline tags sources'
+$r = Invoke-Tool 'log_trace' @{ id = 'req-ZZZ'; paths = @($logA, $logB) }
+Assert ($r.IndexOf('B-two') -lt $r.IndexOf('A-three')) 'log_trace orders matches by timestamp across files'
+
+Write-Host 'log_baseline:'
+$baseLog = Join-Path $tmp 'base.log'; $newLog = Join-Path $tmp 'new.log'
+$bl = 1..10 | ForEach-Object { "2026-01-01 00:00:0$($_ % 10) [ERROR] Payment failed for order $_" }
+Set-Content -Path $baseLog -Value ($bl -join "`n")
+$nl = @()
+$nl += 1..50 | ForEach-Object { "2026-01-01 00:00:0$($_ % 10) [ERROR] Payment failed for order $_" }
+$nl += 1..3 | ForEach-Object { "2026-01-01 00:01:0$_ [ERROR] Kafka broker unreachable" }
+Set-Content -Path $newLog -Value ($nl -join "`n")
+$r = Invoke-Tool 'log_baseline' @{ action = 'save'; path = $baseLog; name = 'b1' }
+Assert ($r -match 'saved baseline') 'log_baseline save'
+$r = Invoke-Tool 'log_baseline' @{ action = 'diff'; path = $newLog; name = 'b1' }
+Assert ($r -match 'NEW error' -and $r -match 'Kafka') 'log_baseline diff flags new template'
+Assert ($r -match 'COUNT SPIKES' -and $r -match 'Payment') 'log_baseline diff flags count spike'
+
+Write-Host 'log_search (stubbed embeddings):'
+$memLog = Join-Path $tmp 'mem.log'
+Set-Content -Path $memLog -Value "2026-01-01 00:00:01 [ERROR] OutOfMemoryException heap exhausted`n2026-01-01 00:00:02 [ERROR] OutOfMemoryException heap exhausted`n2026-01-01 00:00:03 [ERROR] OutOfMemoryException heap exhausted`n2026-01-01 00:00:04 [ERROR] Disk write failed no space left`n2026-01-01 00:00:05 [ERROR] Disk write failed no space left"
+function Get-KakunaEmbeddings { param([string[]]$Inputs)
+    return @($Inputs | ForEach-Object { if ($_ -match '(?i)memory|heap') { ,@(1.0, 0.0) } else { ,@(0.0, 1.0) } })
+}
+$script:LocalMode = $true
+$r = Invoke-Tool 'log_search' @{ path = $memLog; query = 'memory pressure'; top = 2 }
+$script:LocalMode = $false
+Assert ($r.IndexOf('OutOfMemory') -lt $r.IndexOf('Disk')) 'log_search ranks by semantic similarity'
+Assert ((Get-KakunaCosine @(1.0, 0.0) @(1.0, 0.0)) -eq 1.0 -and (Get-KakunaCosine @(1.0, 0.0) @(0.0, 1.0)) -eq 0.0) 'cosine similarity'
+
+Write-Host 'plan mode:'
+$script:PlanMode = $true
+Assert (-not (Request-ToolPermission -Name 'write_file' -Tool $script:ToolRegistry['write_file'] -ToolArgs @{ path = 'x' })) 'plan mode blocks write tools'
+Assert (Request-ToolPermission -Name 'read_file' -Tool $script:ToolRegistry['read_file'] -ToolArgs @{ path = 'x' }) 'plan mode allows read-only tools'
+Assert ((Get-KakunaSystemPrompt) -match 'Plan mode \(ACTIVE\)') 'plan mode note in system prompt'
+$script:PlanMode = $false
+
+# ============================================================ background tasks
 
 # ============================================================ background tasks
 Write-Host 'background tasks:'
