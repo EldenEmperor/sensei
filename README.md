@@ -2,7 +2,7 @@
 
 A terminal AI agent for debugging logs, written in PowerShell 7 — a Claude Code-style agent powered by the OpenAI API or a local Ollama model. Full agentic tooling (read/write/edit/glob/grep/run, subagents, background tasks, MCP servers) plus two log-specific tools (`log_stats`, `log_slice`) that let the model analyze huge log files without drowning in tokens.
 
-> **Two implementations.** The PowerShell variant documented below is the stable reference. A TypeScript/Node port is underway in [`ts/`](./ts/) — engine-first with a headless mode (`-p` + `--continue` + JSON output, plus an importable `SenseiAgent` API) and an Ink TUI on the roadmap. Both share `~/.sensei`. Feature status: [`ts/PARITY.md`](./ts/PARITY.md).
+> **Two implementations.** The PowerShell variant documented below is the stable reference, now **frozen to bugfixes** — new work happens in the TypeScript port in [`ts/`](./ts/), which has the engine, all log tools (byte-identical output, cross-checked), a headless mode (`-p` + `--continue` + JSON output, plus an importable `SenseiAgent` API), and an Ink terminal UI. Both share `~/.sensei`. Feature status: [`ts/PARITY.md`](./ts/PARITY.md).
 
 ```
    ██          ██

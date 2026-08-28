@@ -16,6 +16,20 @@ npm test          # vitest, offline
 Requires Node ≥ 22 and (for real runs) either `OPENAI_API_KEY` or a local
 Ollama (`--local`).
 
+## Interactive usage (Ink TUI)
+
+```
+cd ts
+npm run dev -- --local          # or: npx tsx src/cli/main.ts --local
+```
+
+Claude Code-style terminal UI: streaming markdown answers, live tool-call
+lines, todo checklist, y/n/a/p permission prompts with diff previews, plan
+mode (`/plan`), history + tab-completion in the composer, Esc/Ctrl+C aborts
+the in-flight turn, Ctrl+D exits (saving the session). `/help` lists the
+slash commands; custom commands from `.sensei\commands\*.md` work as in the
+PS variant.
+
 ## Headless usage
 
 ```

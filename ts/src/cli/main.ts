@@ -41,8 +41,9 @@ export async function main(argv: string[]): Promise<number> {
   if (args.investigate && !prompt) {
     prompt = INVESTIGATE_PROMPT.replace('<PATH>', path.resolve(args.investigate));
   }
-  if (!prompt) {
-    process.stderr.write('sensei-ts: -p <prompt> is required (the interactive TUI arrives in a later milestone)\n');
+  const interactive = !prompt && process.stdout.isTTY && process.stdin.isTTY;
+  if (!prompt && !interactive) {
+    process.stderr.write('sensei-ts: -p <prompt> is required when not attached to a terminal\n');
     return 2;
   }
 
@@ -82,6 +83,26 @@ export async function main(argv: string[]): Promise<number> {
     }
   }
 
+  if (interactive) {
+    // TUI mode: --allow rules merge into the in-memory allowlist; permission
+    // prompts are interactive unless --yolo.
+    if (args.allow.length > 0) {
+      const perms = (store.config.permissions ?? { allow: [] }) as { allow: string[] };
+      perms.allow = [...(perms.allow ?? []), ...args.allow];
+      store.config.permissions = perms;
+    }
+    const { runTui } = await import('../tui/index.js');
+    return runTui({
+      store,
+      local: args.local,
+      planMode: args.plan,
+      policy: args.yolo ? { mode: 'yolo' } : { mode: 'interactive' },
+      sessionId: sessionId ?? undefined,
+      restoredMessages,
+      version: '0.1.0',
+    });
+  }
+
   const policy: PermissionPolicy = args.yolo
     ? { mode: 'yolo' }
     : { mode: 'allowlist', extraRules: args.allow };
@@ -101,7 +122,7 @@ export async function main(argv: string[]): Promise<number> {
   let result;
   let error: string | null = null;
   try {
-    result = await agent.ask(prompt, { files: args.files });
+    result = await agent.ask(prompt!, { files: args.files });
   } catch (e) {
     error = (e as Error).message;
     result = null;

@@ -36,11 +36,11 @@ Status values: ✅ ported · 🔶 partial · ⬜ pending (milestone) · ➖ inte
 | Summarizing compaction | ✅ | ⬜ (M5) | TS trims only for now |
 | @file expansion (256KB guard) | ✅ | ✅ | |
 | Permission gate (yolo / session / allowlist / persist) | ✅ | ✅ | PS `-like` semantics reimplemented + tested |
-| Interactive y/n/a/p prompt | ✅ | ⬜ (M3) | host callback exists; headless is policy-driven |
+| Interactive y/n/a/p prompt | ✅ | ✅ | Ink PermissionPrompt with diff preview; persist writes .sensei.json |
 | Hooks (Pre/PostToolUse, UserPromptSubmit, Stop) | ✅ | ⬜ (M4) | |
 | SENSEI.md memory chain + @import | ✅ | ✅ | |
 | auto_verify | ✅ | ⬜ (M5) | |
-| Plan mode gate + exit_plan_mode | ✅ | 🔶 | gate ✅; exit_plan_mode tool M5 |
+| Plan mode gate + exit_plan_mode | ✅ | 🔶 | gate + /plan toggle + plan-approval host callback ✅; exit_plan_mode tool M5 |
 | Sessions | ✅ | ✅ 🆕 | TS: versioned envelope + reads PS legacy arrays; print-mode saving with --continue is TS-only |
 | Cost line / token totals | ✅ | ✅ | |
 | Streaming + `<think>` strip | ✅ | ✅ | via openai pkg async iterator |
@@ -58,8 +58,9 @@ Status values: ✅ ported · 🔶 partial · ⬜ pending (milestone) · ➖ inte
 | --allow rule (repeatable) | ➖ | 🆕 | |
 | --file attach | ➖ | 🆕 | routed through @file expansion |
 | --investigate | ✅ | ✅ | headless: runs the investigate prompt through the agent |
-| Interactive REPL + slash commands | ✅ | ⬜ (M3) | Ink TUI |
-| Markdown renderer / diff previews / themes | ✅ | ⬜ (M3) | |
+| Interactive REPL | ✅ | ✅ | Ink TUI: Static transcript + streaming region, spinner, composer w/ history + tab-completion, Esc/Ctrl+C abort |
+| Slash commands | ✅ | 🔶 | /help /clear /plan /style /color /model /config /permissions /todos /cost /exit /quit + custom .md commands; /compact /mcp /skills /newskill /tasks /memory /init /investigate /resume land M4–M5 |
+| Markdown renderer / diff previews / themes | ✅ | ✅ | line renderer ported (pure, tested); real line-diff for write_file (upgrade over Compare-Object); accent presets + hex |
 | First-run key setup + PATH mutation | ✅ | ➖ | TS prints instructions instead |
 | PS 5.1 relaunch shim | ✅ | ➖ | N/A |
 
@@ -73,6 +74,7 @@ Status values: ✅ ported · 🔶 partial · ⬜ pending (milestone) · ➖ inte
 | Sessions / trim | ~8 | 7 (sessions.test.ts) |
 | Detector unit tests | 7 | 7 (in agent.test.ts) |
 | Log tools + format maps | ~45 | 14 (logtools.test.ts, against the committed app.log + fixtures) |
+| TUI renderer/diff/theme + Ink components | — | 15 (tui.test.ts pure fns; tui-app.test.tsx boots the real App, drives stdin) |
 
 Cross-variant check: `pwsh -File ts\scripts\cross-check.ps1` runs log_stats/log_slice
 through both variants on tests/app.log and requires byte-identical output.

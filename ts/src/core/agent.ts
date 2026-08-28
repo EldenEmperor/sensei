@@ -361,6 +361,21 @@ export class SenseiAgent {
     return true;
   }
 
+  /** Reset the conversation (keeps config/session id). Used by /clear. */
+  clearConversation(): void {
+    this.messages = [{ role: 'system', content: this.systemPrompt() }];
+    this.todos = [];
+    this.emit({ type: 'todos', todos: [] });
+  }
+
+  /** Toggle plan mode and regenerate the system prompt to match. */
+  setPlanMode(on: boolean): void {
+    this.planMode = on;
+    if (this.messages.length > 0 && this.messages[0].role === 'system') {
+      this.messages[0] = { role: 'system', content: this.systemPrompt() };
+    }
+  }
+
   saveSession(): string {
     const envelope: SessionEnvelope = {
       schema_version: 1,
