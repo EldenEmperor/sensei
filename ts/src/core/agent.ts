@@ -24,10 +24,15 @@ import type {
   TurnResult,
 } from './types.js';
 import { registerLogTools } from '../logtools/index.js';
+import type { McpManager } from '../mcp/client.js';
 import { registerFsTools } from '../tools/fs.js';
 import { registerSearchTools } from '../tools/search.js';
 import { registerShellTools } from '../tools/shell.js';
+import { addBackgroundTaskNotices, registerTaskTools } from '../tools/tasks.js';
 import { registerTodoTools } from '../tools/todo.js';
+import { registerWebTools } from '../tools/web.js';
+import { mergedHooks, runHooks, type HookConfig } from './hooks.js';
+import { registerSkillTool } from './skills.js';
 import { limitToolOutput, ToolRegistry, type ToolContext } from '../tools/registry.js';
 
 export const MAX_TOOL_ROUNDS = 40;
@@ -43,6 +48,8 @@ export interface AgentOptions {
   sessionId?: string;
   /** Restored transcript (no system message — it is regenerated). */
   restoredMessages?: ChatMessage[];
+  /** Connected MCP manager; its tools register as mcp__<server>__<tool>. */
+  mcp?: McpManager;
 }
 
 export class SenseiAgent {
@@ -77,8 +84,20 @@ export class SenseiAgent {
     registerShellTools(this.registry);
     registerTodoTools(this.registry);
     registerLogTools(this.registry);
+    registerTaskTools(this.registry);
+    registerWebTools(this.registry);
+    opts.mcp?.registerTools(this.registry);
+    registerSkillTool(this.registry, this.store.cwd, this.store.configDir);
     this.messages = [{ role: 'system', content: this.systemPrompt() }];
     if (opts.restoredMessages) this.messages.push(...opts.restoredMessages);
+  }
+
+  private hooks(): HookConfig[] {
+    return mergedHooks(this.store.config, this.store.projectConfig as { hooks?: unknown });
+  }
+
+  private hookCtx() {
+    return { cwd: this.store.cwd, sessionId: this._sessionId, note: (t: string) => this.note(t) };
   }
 
   get sessionId(): string {
@@ -134,10 +153,19 @@ export class SenseiAgent {
   }
 
   async ask(prompt: string, opts: { signal?: AbortSignal; files?: string[] } = {}): Promise<TurnResult> {
+    registerSkillTool(this.registry, this.store.cwd, this.store.configDir); // cheap rescan: picks up skills created mid-session
+    const hook = await runHooks('UserPromptSubmit', this.hooks(), this.hookCtx(), { prompt });
+    if (hook.block) {
+      this.note(`✗ prompt blocked by hook: ${hook.reason}`);
+      const blocked: TurnResult = { finalText: null, finishReason: 'blocked', aborted: false, rounds: 0, permissionDenials: [] };
+      this.emit({ type: 'turn-end', finalText: null, finishReason: 'blocked', aborted: false, rounds: 0 });
+      return blocked;
+    }
     let text = prompt;
     for (const f of opts.files ?? []) text += `\n@${f}`;
     const expanded = this.expandFileReferences(text);
     this.messages.push({ role: 'user', content: expanded });
+    addBackgroundTaskNotices(this.messages);
     this.permissionDenials = [];
     this.emit({ type: 'turn-start', depth: 0 });
     const r = await this.runLoop(this.messages, this.maxRounds, 0, opts.signal);
@@ -151,6 +179,7 @@ export class SenseiAgent {
         completionTokens: this.totalCompletionTokens,
         costUsd,
       });
+      await runHooks('Stop', this.hooks(), this.hookCtx(), { lastMessage: r.finalText ?? '' });
     }
     this.emit({
       type: 'turn-end',
@@ -273,6 +302,7 @@ export class SenseiAgent {
       }
 
       if (depth === 0) {
+        addBackgroundTaskNotices(messages);
         const budget = Number(this.store.config.context_char_budget);
         if (trimTranscript(messages, budget)) {
           this.note('(trimmed earlier conversation to stay within the context budget)');
@@ -293,6 +323,9 @@ export class SenseiAgent {
     const tool = this.registry.get(name);
     if (!tool) return `ERROR: unknown tool '${name}'`;
 
+    const pre = await runHooks('PreToolUse', this.hooks(), this.hookCtx(), { toolName: name, toolInput: args });
+    if (pre.block) return `ERROR: blocked by PreToolUse hook: ${pre.reason}`;
+
     if (!tool.readOnly) {
       const allowed = await this.checkPermission(name, tool.primaryArg, args);
       if (allowed !== true) return allowed;
@@ -309,12 +342,15 @@ export class SenseiAgent {
         this.emit({ type: 'todos', todos });
       },
     };
+    let out: string;
     try {
       if (signal?.aborted) return 'ERROR: aborted by user';
-      return String(await tool.handler(args, ctx));
+      out = String(await tool.handler(args, ctx));
     } catch (e) {
-      return `ERROR: ${(e as Error).message}`;
+      out = `ERROR: ${(e as Error).message}`;
     }
+    await runHooks('PostToolUse', this.hooks(), this.hookCtx(), { toolName: name, toolInput: args, toolResponse: out });
+    return out;
   }
 
   /** Returns true, or the ERROR string to hand the model. */

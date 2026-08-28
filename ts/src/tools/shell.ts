@@ -86,7 +86,8 @@ export function registerShellTools(registry: ToolRegistry): void {
     },
     handler: async (a, ctx) => {
       if (a.run_in_background) {
-        return 'ERROR: background tasks are not yet supported in the TS variant — run the command in the foreground (raise timeout_seconds if needed)';
+        const { startBackgroundTask } = await import('./tasks.js');
+        return startBackgroundTask(String(a.command), ctx.cwd, ctx.configDir);
       }
       return runPowershell(String(a.command), ctx.cwd, Number(a.timeout_seconds ?? 120));
     },

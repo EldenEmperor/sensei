@@ -7,6 +7,8 @@ import { SenseiAgent } from '../core/agent.js';
 import { ConfigStore, getApiKey } from '../core/config.js';
 import { INVESTIGATE_PROMPT } from '../core/prompts.js';
 import { findSession, loadSessionFile } from '../core/sessions.js';
+import { McpManager, mergedMcpServers } from '../mcp/client.js';
+import { stopAllBackgroundTasks } from '../tools/tasks.js';
 import type { PermissionPolicy } from '../core/types.js';
 import { parseCliArgs, USAGE, UsageError } from './args.js';
 import { HeadlessHost } from './headlessHost.js';
@@ -83,6 +85,18 @@ export async function main(argv: string[]): Promise<number> {
     }
   }
 
+  // MCP servers (shared config with the PS variant)
+  const mcpConfigs = mergedMcpServers(store);
+  let mcp: McpManager | undefined;
+  if (Object.keys(mcpConfigs).length > 0) {
+    mcp = new McpManager({
+      configDir: store.configDir,
+      cwd: store.cwd,
+      callTimeoutSec: Number(store.config.mcp_call_timeout ?? 120),
+    });
+    await mcp.startAll(mcpConfigs, (t) => process.stderr.write(t + '\n'));
+  }
+
   if (interactive) {
     // TUI mode: --allow rules merge into the in-memory allowlist; permission
     // prompts are interactive unless --yolo.
@@ -91,16 +105,22 @@ export async function main(argv: string[]): Promise<number> {
       perms.allow = [...(perms.allow ?? []), ...args.allow];
       store.config.permissions = perms;
     }
-    const { runTui } = await import('../tui/index.js');
-    return runTui({
-      store,
-      local: args.local,
-      planMode: args.plan,
-      policy: args.yolo ? { mode: 'yolo' } : { mode: 'interactive' },
-      sessionId: sessionId ?? undefined,
-      restoredMessages,
-      version: '0.1.0',
-    });
+    try {
+      const { runTui } = await import('../tui/index.js');
+      return await runTui({
+        store,
+        local: args.local,
+        planMode: args.plan,
+        policy: args.yolo ? { mode: 'yolo' } : { mode: 'interactive' },
+        sessionId: sessionId ?? undefined,
+        restoredMessages,
+        version: '0.1.0',
+        mcp,
+      });
+    } finally {
+      stopAllBackgroundTasks();
+      await mcp?.stopAll();
+    }
   }
 
   const policy: PermissionPolicy = args.yolo
@@ -117,6 +137,7 @@ export async function main(argv: string[]): Promise<number> {
     maxRounds: args.maxRounds ?? undefined,
     sessionId: sessionId ?? undefined,
     restoredMessages,
+    mcp,
   });
 
   let result;
@@ -126,6 +147,9 @@ export async function main(argv: string[]): Promise<number> {
   } catch (e) {
     error = (e as Error).message;
     result = null;
+  } finally {
+    stopAllBackgroundTasks();
+    await mcp?.stopAll();
   }
 
   // print mode saves the session when the caller opted into continuity

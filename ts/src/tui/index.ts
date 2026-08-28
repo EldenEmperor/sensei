@@ -8,6 +8,7 @@ import { render } from 'ink';
 import { SenseiAgent } from '../core/agent.js';
 import type { ConfigStore } from '../core/config.js';
 import type { ChatMessage, PermissionPolicy } from '../core/types.js';
+import type { McpManager } from '../mcp/client.js';
 import { App, DeferredHost } from './App.js';
 
 export interface TuiOptions {
@@ -18,6 +19,7 @@ export interface TuiOptions {
   sessionId?: string;
   restoredMessages?: ChatMessage[];
   version?: string;
+  mcp?: McpManager;
 }
 
 function loadBanner(): string[] {
@@ -41,6 +43,7 @@ export async function runTui(opts: TuiOptions): Promise<number> {
     planMode: opts.planMode,
     sessionId: opts.sessionId,
     restoredMessages: opts.restoredMessages,
+    mcp: opts.mcp,
   });
   const instance = render(
     React.createElement(App, {
@@ -48,6 +51,7 @@ export async function runTui(opts: TuiOptions): Promise<number> {
       host,
       version: opts.version ?? '0.1.0',
       bannerLines: loadBanner(),
+      mcp: opts.mcp,
     }),
     { exitOnCtrlC: false },
   );

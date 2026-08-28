@@ -10,7 +10,11 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import type { SenseiAgent } from '../core/agent.js';
 import { costLine, getActiveModel, OUTPUT_STYLES } from '../core/config.js';
 import type { AgentEvent, AgentHost } from '../core/events.js';
+import { NEW_SKILL_PROMPT } from '../core/prompts.js';
+import { getSkills } from '../core/skills.js';
 import type { PermissionDecision, PermissionRequest, Todo } from '../core/types.js';
+import type { McpManager } from '../mcp/client.js';
+import { finishedTaskNotes, listBackgroundTasks } from '../tools/tasks.js';
 import { formatToolArgs } from '../cli/textOutput.js';
 import { renderDiffPreview } from './diff.js';
 import { renderMarkdown } from './markdown.js';
@@ -44,6 +48,7 @@ interface AppProps {
   host: DeferredHost;
   version: string;
   bannerLines: string[];
+  mcp?: McpManager;
 }
 
 const HELP_LINES = [
@@ -57,11 +62,15 @@ const HELP_LINES = [
   '  /permissions     list allowlist rules',
   '  /todos           show the current checklist',
   '  /cost            token usage and estimated cost',
+  '  /mcp             MCP server status and tools',
+  '  /skills          list available skills',
+  '  /newskill <name> [purpose]  have the agent author a new skill',
+  '  /tasks           list background tasks',
   '  /exit            quit (also /quit, or Ctrl+D)',
   '  custom commands: .sensei\\commands\\<name>.md ($ARGUMENTS substituted)',
 ];
 
-export function App({ agent, host, version, bannerLines }: AppProps): React.ReactElement {
+export function App({ agent, host, version, bannerLines, mcp }: AppProps): React.ReactElement {
   const { exit } = useApp();
   const nextId = useRef(0);
   const [items, setItems] = useState<Item[]>([]);
@@ -180,6 +189,7 @@ export function App({ agent, host, version, bannerLines }: AppProps): React.Reac
         setActiveTool(null);
         streamRef.current = '';
         setStreamText('');
+        for (const n of finishedTaskNotes()) push(theme.dim(n));
       });
   };
 
@@ -271,6 +281,45 @@ export function App({ agent, host, version, bannerLines }: AppProps): React.Reac
         push(t.dim(cl));
         break;
       }
+      case '/mcp': {
+        const lines = mcp
+          ? mcp.statusLines()
+          : [
+              'no MCP servers configured — add "mcpServers" to ~/.sensei/config.json or .sensei.json:',
+              '  "mcpServers": { "fs": { "command": "npx", "args": ["-y", "@modelcontextprotocol/server-filesystem", "C:\\\\logs"] } }',
+            ];
+        for (const l of lines) push(t.dim(protectTerminalText(l)));
+        break;
+      }
+      case '/skills': {
+        const skills = getSkills(agent.store.cwd, agent.store.configDir);
+        if (skills.length === 0) {
+          push(t.dim('no skills found — create .sensei\\skills\\<name>\\SKILL.md or use /newskill'));
+          break;
+        }
+        for (const s of skills) push(t.dim(`  ${s.name} (${s.source}) — ${s.description}`));
+        break;
+      }
+      case '/newskill': {
+        const parts = arg.split(/\s+/);
+        const skillName = parts[0] ?? '';
+        if (!skillName) {
+          push(t.dim('usage: /newskill <name> [purpose]'));
+          break;
+        }
+        const purpose = parts.slice(1).join(' ') || '(decide from the name)';
+        run(NEW_SKILL_PROMPT.replace(/<NAME>/g, skillName).replace(/<DESC>/g, purpose));
+        break;
+      }
+      case '/tasks': {
+        const list = listBackgroundTasks();
+        if (list.length === 0) {
+          push(t.dim('no background tasks'));
+          break;
+        }
+        for (const bt of list) push(t.dim(`  ${bt.id}: ${bt.status} — ${protectTerminalText(bt.command)}`));
+        break;
+      }
       case '/exit':
       case '/quit':
         doExit();
@@ -282,6 +331,14 @@ export function App({ agent, host, version, bannerLines }: AppProps): React.Reac
           push(t.dim(`(custom command: ${file})`));
           const prompt = fs.readFileSync(file, 'utf8').replace(/\$ARGUMENTS/g, arg);
           run(prompt);
+          break;
+        }
+        const skill = getSkills(agent.store.cwd, agent.store.configDir).find(
+          (s) => s.name.toLowerCase() === name.toLowerCase(),
+        );
+        if (skill) {
+          push(t.dim(`(skill: ${skill.path})`));
+          void import('../core/skills.js').then(({ getSkillPrompt }) => run(getSkillPrompt(skill, arg)));
           break;
         }
         push(t.dim(`unknown command ${cmd} — try /help`));

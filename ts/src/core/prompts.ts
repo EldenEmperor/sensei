@@ -87,6 +87,19 @@ export const INVESTIGATE_PROMPT = `Investigate the log file at <PATH>. Call log_
 4) Finish with 2-3 concrete suggested next steps using the other log tools (log_slice time windows, log_trace ids, log_baseline), each with an exact example call.
 Cite evidence as path:line.`;
 
+export const NEW_SKILL_PROMPT = `Create a new Sensei skill named '<NAME>'. Purpose: <DESC>
+
+A skill is a folder .sensei\\skills\\<NAME>\\ (relative to the current directory) containing SKILL.md in exactly this format:
+
+---
+name: <NAME>
+description: one line saying what the skill does AND when to use it — this line is how the agent decides to load it, so include trigger phrases
+---
+
+Concise imperative instructions: the method to follow, which tools to use, the expected output format. If helper files or scripts would make the skill better, create them in the same folder and reference them by name in the instructions.
+
+If the stated purpose is vague, make sensible decisions rather than asking. Write the file with write_file, then confirm what the skill does and that it can be invoked as /<NAME> or loaded automatically via the skill tool.`;
+
 export const INIT_PROMPT = `Explore the current directory and write a SENSEI.md project-memory file for future sessions. Investigate with glob, read_file on key files, and log_stats on any log files you find. Cover: what this directory/project is, where the log files live and what formats/timestamp styles they use, common failure patterns or error templates you can see, and useful commands. Keep it under 150 lines. Write it with write_file to .\\SENSEI.md, then summarize what you recorded.`;
 
 // auto_continue: when a turn ends with a tutorial telling the USER what to run,

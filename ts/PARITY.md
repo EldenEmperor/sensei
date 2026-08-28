@@ -13,17 +13,18 @@ Status values: ✅ ported · 🔶 partial · ⬜ pending (milestone) · ➖ inte
 | glob | ✅ | ✅ | same pattern→regex translation, newest-first, cap 200 |
 | grep | ✅ | ✅ | JS regex instead of .NET regex (documented divergence) |
 | run_powershell (foreground) | ✅ | ✅ | spawns pwsh, same output format, kill-tree on timeout |
-| run_powershell (background) | ✅ | ⬜ (M4) | returns a clear error for now |
+| run_powershell (background) | ✅ | ✅ | -EncodedCommand base64 UTF-16LE, file-backed delta reads |
 | todo_write | ✅ | ✅ | surfaces via the `todos` event |
 | log_slice / log_stats | ✅ | ✅ | cross-check: byte-identical output on the 200k-line app.log |
 | log_timeline / log_trace | ✅ | ✅ | block-cursor k-way merge via async iterators |
 | log_baseline | ✅ | ✅ | template_version=2, same diff rules |
 | log_search | ✅ | ✅ | Ollama embeddings via fetch; provider injectable for tests |
 | log_investigate + format maps | ✅ | ✅ | full analyzer + cache + hints; ~10× faster per pass than PS |
-| web_fetch / web_search / web_browser | ✅ | ⬜ (M4) | |
+| web_fetch / web_search / web_browser | ✅ | ✅ | pure HTML/DDG parsers unit-tested; fetch + headless Edge/Chrome spawn |
 | task / verify / task_parallel / exit_plan_mode | ✅ | ⬜ (M5) | task_parallel becomes Promise.all in-process |
-| skill | ✅ | ⬜ (M4) | |
-| MCP tool bridge (mcp__server__tool) | ✅ | ⬜ (M4) | via @modelcontextprotocol/sdk |
+| skill | ✅ | ✅ | re-registered each turn; project shadows user |
+| MCP tool bridge (mcp__server__tool) | ✅ | ✅ | @modelcontextprotocol/sdk StdioClientTransport; stderr → ~/.sensei/logs; round-trip tested vs a live SDK server |
+| task_output / kill_task | ✅ | ✅ | |
 
 ## Engine
 
@@ -37,7 +38,8 @@ Status values: ✅ ported · 🔶 partial · ⬜ pending (milestone) · ➖ inte
 | @file expansion (256KB guard) | ✅ | ✅ | |
 | Permission gate (yolo / session / allowlist / persist) | ✅ | ✅ | PS `-like` semantics reimplemented + tested |
 | Interactive y/n/a/p prompt | ✅ | ✅ | Ink PermissionPrompt with diff preview; persist writes .sensei.json |
-| Hooks (Pre/PostToolUse, UserPromptSubmit, Stop) | ✅ | ⬜ (M4) | |
+| Hooks (Pre/PostToolUse, UserPromptSubmit, Stop) | ✅ | ✅ | pwsh child, JSON on stdin, exit 2 = block — existing hooks work unchanged |
+| Background-task turn notices (<system-note>) | ✅ | ✅ | turn start + between tool rounds |
 | SENSEI.md memory chain + @import | ✅ | ✅ | |
 | auto_verify | ✅ | ⬜ (M5) | |
 | Plan mode gate + exit_plan_mode | ✅ | 🔶 | gate + /plan toggle + plan-approval host callback ✅; exit_plan_mode tool M5 |
@@ -59,7 +61,7 @@ Status values: ✅ ported · 🔶 partial · ⬜ pending (milestone) · ➖ inte
 | --file attach | ➖ | 🆕 | routed through @file expansion |
 | --investigate | ✅ | ✅ | headless: runs the investigate prompt through the agent |
 | Interactive REPL | ✅ | ✅ | Ink TUI: Static transcript + streaming region, spinner, composer w/ history + tab-completion, Esc/Ctrl+C abort |
-| Slash commands | ✅ | 🔶 | /help /clear /plan /style /color /model /config /permissions /todos /cost /exit /quit + custom .md commands; /compact /mcp /skills /newskill /tasks /memory /init /investigate /resume land M4–M5 |
+| Slash commands | ✅ | 🔶 | /help /clear /plan /style /color /model /config /permissions /todos /cost /mcp /skills /newskill /tasks /exit /quit + custom .md commands + /<skillname>; /compact /memory /init /investigate /resume land M5 |
 | Markdown renderer / diff previews / themes | ✅ | ✅ | line renderer ported (pure, tested); real line-diff for write_file (upgrade over Compare-Object); accent presets + hex |
 | First-run key setup + PATH mutation | ✅ | ➖ | TS prints instructions instead |
 | PS 5.1 relaunch shim | ✅ | ➖ | N/A |
@@ -75,6 +77,7 @@ Status values: ✅ ported · 🔶 partial · ⬜ pending (milestone) · ➖ inte
 | Detector unit tests | 7 | 7 (in agent.test.ts) |
 | Log tools + format maps | ~45 | 14 (logtools.test.ts, against the committed app.log + fixtures) |
 | TUI renderer/diff/theme + Ink components | — | 15 (tui.test.ts pure fns; tui-app.test.tsx boots the real App, drives stdin) |
+| Hooks / skills / tasks / web / MCP | ~25 | 18 (integrations.test.ts; MCP vs a live mock SDK server subprocess) |
 
 Cross-variant check: `pwsh -File ts\scripts\cross-check.ps1` runs log_stats/log_slice
 through both variants on tests/app.log and requires byte-identical output.
