@@ -17,6 +17,7 @@ export interface CliArgs {
   model: string | null;
   plan: boolean;
   maxRounds: number | null;
+  investigate: string | null;
   help: boolean;
 }
 
@@ -57,6 +58,7 @@ export function parseCliArgs(argv: string[]): CliArgs {
         model: { type: 'string' },
         plan: { type: 'boolean' },
         'max-rounds': { type: 'string' },
+        investigate: { type: 'string' },
         help: { type: 'boolean', short: 'h' },
       },
     });
@@ -89,6 +91,7 @@ export function parseCliArgs(argv: string[]): CliArgs {
     model: (v.model as string | undefined) ?? null,
     plan: Boolean(v.plan),
     maxRounds,
+    investigate: (v.investigate as string | undefined) ?? null,
     help: Boolean(v.help),
   };
 }
@@ -107,4 +110,5 @@ export const USAGE = `usage: sensei-ts -p "prompt" [options]
   --model <name>            override the model for this run
   --plan                    plan mode: read-only tools only
   --max-rounds <n>          cap model/tool rounds for the turn (default 40)
+  --investigate <path>      deep-map a log file's structure (implies a built-in prompt; -p optional)
 `;

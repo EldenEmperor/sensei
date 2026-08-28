@@ -5,3 +5,4 @@ get_hardware_specs.ps1
 
 ts/node_modules/
 ts/dist/
+get_largest_files.ps1

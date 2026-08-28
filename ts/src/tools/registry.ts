@@ -1,9 +1,12 @@
 // Tool registry + shared helpers, ported from src\tools.ps1.
 
-import type { Todo, ToolSpec } from '../core/types.js';
+import type { SenseiConfig, Todo, ToolSpec } from '../core/types.js';
 
 export interface ToolContext {
   cwd: string;
+  configDir: string;
+  config: SenseiConfig;
+  local: boolean;
   emitNote(text: string): void;
   setTodos(todos: Todo[]): void;
 }

@@ -23,6 +23,7 @@ import type {
   ToolCall,
   TurnResult,
 } from './types.js';
+import { registerLogTools } from '../logtools/index.js';
 import { registerFsTools } from '../tools/fs.js';
 import { registerSearchTools } from '../tools/search.js';
 import { registerShellTools } from '../tools/shell.js';
@@ -75,6 +76,7 @@ export class SenseiAgent {
     registerSearchTools(this.registry);
     registerShellTools(this.registry);
     registerTodoTools(this.registry);
+    registerLogTools(this.registry);
     this.messages = [{ role: 'system', content: this.systemPrompt() }];
     if (opts.restoredMessages) this.messages.push(...opts.restoredMessages);
   }
@@ -298,6 +300,9 @@ export class SenseiAgent {
 
     const ctx: ToolContext = {
       cwd: this.store.cwd,
+      configDir: this.store.configDir,
+      config: this.store.config,
+      local: this.local,
       emitNote: (t) => this.note(t),
       setTodos: (todos) => {
         this.todos = todos;

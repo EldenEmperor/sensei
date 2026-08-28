@@ -2,8 +2,10 @@
 // sensei-ts CLI — headless-first entry point.
 // Exit codes: 0 success; 1 turn error (API/key/network); 2 usage error.
 
+import path from 'node:path';
 import { SenseiAgent } from '../core/agent.js';
 import { ConfigStore, getApiKey } from '../core/config.js';
+import { INVESTIGATE_PROMPT } from '../core/prompts.js';
 import { findSession, loadSessionFile } from '../core/sessions.js';
 import type { PermissionPolicy } from '../core/types.js';
 import { parseCliArgs, USAGE, UsageError } from './args.js';
@@ -35,7 +37,11 @@ export async function main(argv: string[]): Promise<number> {
     process.stdout.write(USAGE);
     return 0;
   }
-  if (!args.print) {
+  let prompt = args.print;
+  if (args.investigate && !prompt) {
+    prompt = INVESTIGATE_PROMPT.replace('<PATH>', path.resolve(args.investigate));
+  }
+  if (!prompt) {
     process.stderr.write('sensei-ts: -p <prompt> is required (the interactive TUI arrives in a later milestone)\n');
     return 2;
   }
@@ -95,7 +101,7 @@ export async function main(argv: string[]): Promise<number> {
   let result;
   let error: string | null = null;
   try {
-    result = await agent.ask(args.print, { files: args.files });
+    result = await agent.ask(prompt, { files: args.files });
   } catch (e) {
     error = (e as Error).message;
     result = null;

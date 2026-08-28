@@ -3,12 +3,17 @@
 // SDK-internal retries are disabled so our policy is the only one.
 
 import OpenAI, { APIError, APIConnectionError } from 'openai';
+import { Agent as UndiciAgent, fetch as undiciFetch } from 'undici';
 import type { ChatClient } from './client.js';
 import type { ChatRequest, ChatResponse, ChatUsage, SenseiConfig, ToolCall } from '../types.js';
 import { getActiveModel, getApiKey } from '../config.js';
 
 const RETRY_STATUSES = new Set([429, 500, 502, 503]);
 const MAX_ATTEMPTS = 5;
+
+// Node's default undici Agent caps headersTimeout at 300s — below our 600s
+// request timeout, which matters when a local model has to load first.
+const dispatcher = new UndiciAgent({ headersTimeout: 600_000, bodyTimeout: 600_000 });
 
 const sleep = (ms: number, signal?: AbortSignal) =>
   new Promise<void>((resolve, reject) => {
@@ -46,6 +51,8 @@ export class OpenAIChatClient implements ChatClient {
         baseURL: String(this.config.local_base_url).replace(/\/+$/, ''),
         maxRetries: 0,
         timeout: 600_000,
+        fetch: undiciFetch as unknown as typeof globalThis.fetch,
+        fetchOptions: { dispatcher },
       });
     }
     const key = getApiKey(this.config);
@@ -54,7 +61,13 @@ export class OpenAIChatClient implements ChatClient {
         'No OpenAI API key configured. Set OPENAI_API_KEY or delete ~/.sensei/config.json to rerun setup.',
       );
     }
-    return new OpenAI({ apiKey: key, maxRetries: 0, timeout: 600_000 });
+    return new OpenAI({
+      apiKey: key,
+      maxRetries: 0,
+      timeout: 600_000,
+      fetch: undiciFetch as unknown as typeof globalThis.fetch,
+      fetchOptions: { dispatcher },
+    });
   }
 
   async chat(
