@@ -1,9 +1,12 @@
 # Sensei (TypeScript variant)
 
-The TypeScript/Node port of Sensei — engine-first, headless-capable, with an
-Ink TUI on the roadmap. The PowerShell variant at the repo root remains the
-stable reference; both share `~/.sensei` (config, sessions, allowlists).
-Progress is tracked feature-by-feature in [PARITY.md](./PARITY.md).
+The TypeScript/Node port of Sensei — **feature-complete**: the full engine,
+all log tools (byte-identical output, cross-checked against the PS variant),
+subagents (`task`/`verify`/`task_parallel`/auto-verify), summarizing
+compaction, MCP (official SDK), skills, hooks, background tasks, web tools,
+an Ink TUI, and a first-class headless mode. The PowerShell variant at the
+repo root is the frozen reference; both share `~/.sensei` (config, sessions,
+allowlists, MCP servers, hooks). Feature map: [PARITY.md](./PARITY.md).
 
 ## Setup
 

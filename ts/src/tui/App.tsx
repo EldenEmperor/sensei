@@ -8,9 +8,10 @@ import path from 'node:path';
 import { Box, Static, Text, useApp, useInput } from 'ink';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import type { SenseiAgent } from '../core/agent.js';
-import { costLine, getActiveModel, OUTPUT_STYLES } from '../core/config.js';
+import { costLine, getActiveModel, getMemory, OUTPUT_STYLES } from '../core/config.js';
 import type { AgentEvent, AgentHost } from '../core/events.js';
-import { NEW_SKILL_PROMPT } from '../core/prompts.js';
+import { INIT_PROMPT, INVESTIGATE_PROMPT, NEW_SKILL_PROMPT } from '../core/prompts.js';
+import { loadSessionFile } from '../core/sessions.js';
 import { getSkills } from '../core/skills.js';
 import type { PermissionDecision, PermissionRequest, Todo } from '../core/types.js';
 import type { McpManager } from '../mcp/client.js';
@@ -66,6 +67,11 @@ const HELP_LINES = [
   '  /skills          list available skills',
   '  /newskill <name> [purpose]  have the agent author a new skill',
   '  /tasks           list background tasks',
+  '  /compact         summarize the conversation to reclaim context',
+  '  /memory          show loaded SENSEI.md memory files',
+  '  /init            explore this directory and write a SENSEI.md',
+  '  /investigate [path]  deep-map a log file\'s structure (default: newest .log in cwd)',
+  '  /resume [n|id]   list recent sessions / continue one',
   '  /exit            quit (also /quit, or Ctrl+D)',
   '  custom commands: .sensei\\commands\\<name>.md ($ARGUMENTS substituted)',
 ];
@@ -85,6 +91,7 @@ export function App({ agent, host, version, bannerLines, mcp }: AppProps): React
   const [tokens, setTokens] = useState<{ inTok: number; outTok: number }>({ inTok: 0, outTok: 0 });
   const history = useRef<string[]>([]);
   const historyIdx = useRef(-1);
+  const resumeList = useRef<string[]>([]);
   const abortRef = useRef<AbortController | null>(null);
   const streamRef = useRef('');
 
@@ -318,6 +325,98 @@ export function App({ agent, host, version, bannerLines, mcp }: AppProps): React
           break;
         }
         for (const bt of list) push(t.dim(`  ${bt.id}: ${bt.status} — ${protectTerminalText(bt.command)}`));
+        break;
+      }
+      case '/compact': {
+        setBusy(true);
+        void agent
+          .compactContext(true)
+          .catch((e: Error) => push(t.err(`✗ ${protectTerminalText(e.message)}`)))
+          .finally(() => setBusy(false));
+        break;
+      }
+      case '/init':
+        run(INIT_PROMPT);
+        break;
+      case '/investigate': {
+        let target = arg;
+        if (!target) {
+          const logs = fs
+            .readdirSync(agent.store.cwd)
+            .filter((n) => n.endsWith('.log'))
+            .map((n) => path.join(agent.store.cwd, n))
+            .filter((p) => fs.statSync(p).isFile())
+            .sort((x, y) => fs.statSync(y).mtimeMs - fs.statSync(x).mtimeMs);
+          if (logs.length === 0) {
+            push(t.dim('usage: /investigate <path-to-log> (no *.log files found in the current directory)'));
+            break;
+          }
+          target = logs[0];
+          push(t.dim(`no path given — using newest .log in cwd: ${path.basename(target)}`));
+        }
+        run(INVESTIGATE_PROMPT.replace('<PATH>', target));
+        break;
+      }
+      case '/memory': {
+        const mem = getMemory(agent.store.configDir, agent.store.cwd);
+        if (mem.length === 0) {
+          push(t.dim('no SENSEI.md loaded — /init creates one for this directory'));
+          break;
+        }
+        for (const m of mem) push(t.dim(`  ${m.path}  (${m.content.length} chars)`));
+        break;
+      }
+      case '/resume': {
+        const files = fs.existsSync(agent.store.sessionDir)
+          ? fs
+              .readdirSync(agent.store.sessionDir)
+              .filter((n) => n.endsWith('.json'))
+              .map((n) => path.join(agent.store.sessionDir, n))
+              .sort((x, y) => fs.statSync(y).mtimeMs - fs.statSync(x).mtimeMs)
+              .slice(0, 10)
+          : [];
+        if (files.length === 0 && !arg) {
+          push(t.dim('no saved sessions'));
+          break;
+        }
+        if (!arg) {
+          resumeList.current = files;
+          push('Recent sessions:');
+          files.forEach((f, i) => {
+            try {
+              const loaded = loadSessionFile(f);
+              const firstUser = loaded.messages.find(
+                (m) => m.role === 'user' && !String(m.content ?? '').startsWith('['),
+              );
+              let preview = String(firstUser?.content ?? '').split(/\r?\n/)[0];
+              if (preview.length > 80) preview = preview.slice(0, 77) + '…';
+              push(t.dim(`  [${i + 1}] ${path.basename(f)}  ${loaded.messages.length} msgs  ${protectTerminalText(preview)}`));
+            } catch {
+              push(t.dim(`  [${i + 1}] ${path.basename(f)}  (unreadable)`));
+            }
+          });
+          push(t.dim('resume with: /resume <number|id>'));
+          break;
+        }
+        let file: string | null = null;
+        if (/^\d+$/.test(arg) && Number(arg) >= 1 && Number(arg) <= resumeList.current.length) {
+          file = resumeList.current[Number(arg) - 1];
+        } else {
+          const byId = path.join(agent.store.sessionDir, `${arg}.json`);
+          if (fs.existsSync(byId)) file = byId;
+          else if (fs.existsSync(arg)) file = arg;
+        }
+        if (!file) {
+          push(t.err(`no session matching '${arg}'`));
+          break;
+        }
+        try {
+          const loaded = loadSessionFile(file);
+          agent.restoreConversation(loaded.messages);
+          push(t.dim(`resumed ${loaded.messages.length} messages from ${path.basename(file)}`));
+        } catch (e) {
+          push(t.err(`couldn't resume: ${(e as Error).message}`));
+        }
         break;
       }
       case '/exit':
