@@ -1,0 +1,25 @@
+ts=2026-08-27T02:46:01Z level=info msg="pool checkout" used=61 max=100 wait_ms=2
+ts=2026-08-27T02:46:04Z level=info msg="pool checkout" used=63 max=100 wait_ms=1
+ts=2026-08-27T02:46:07Z level=info msg="pool checkout" used=66 max=100 wait_ms=3
+ts=2026-08-27T02:46:10Z level=info msg="pool checkout" used=64 max=100 wait_ms=2
+ts=2026-08-27T02:46:13Z level=info msg="pool checkout" used=69 max=100 wait_ms=4
+ts=2026-08-27T02:46:16Z level=warn msg="pool nearing capacity" used=81 max=100 wait_ms=12
+ts=2026-08-27T02:46:19Z level=info msg="pool checkout" used=78 max=100 wait_ms=6
+ts=2026-08-27T02:46:22Z level=info msg="pool checkout" used=80 max=100 wait_ms=7
+ts=2026-08-27T02:46:25Z level=warn msg="pool nearing capacity" used=86 max=100 wait_ms=18
+ts=2026-08-27T02:46:28Z level=info msg="pool checkout" used=84 max=100 wait_ms=9
+ts=2026-08-27T02:46:31Z level=warn msg="pool nearing capacity" used=90 max=100 wait_ms=25
+ts=2026-08-27T02:46:34Z level=info msg="pool checkout" used=88 max=100 wait_ms=11
+ts=2026-08-27T02:46:37Z level=warn msg="pool nearing capacity" used=93 max=100 wait_ms=31
+ts=2026-08-27T02:46:40Z level=error msg="pool exhausted" used=100 max=100 wait_ms=250
+ts=2026-08-27T02:46:43Z level=error msg="checkout timeout" used=100 max=100 wait_ms=500
+ts=2026-08-27T02:46:46Z level=warn msg="pool nearing capacity" used=95 max=100 wait_ms=40
+ts=2026-08-27T02:46:49Z level=info msg="pool checkout" used=91 max=100 wait_ms=15
+ts=2026-08-27T02:46:52Z level=info msg="pool checkout" used=87 max=100 wait_ms=10
+ts=2026-08-27T02:46:55Z level=info msg="pool checkout" used=82 max=100 wait_ms=8
+ts=2026-08-27T02:46:58Z level=info msg="pool checkout" used=77 max=100 wait_ms=5
+ts=2026-08-27T02:47:01Z level=info msg="pool checkout" used=72 max=100 wait_ms=3
+ts=2026-08-27T02:47:04Z level=info msg="pool checkout" used=68 max=100 wait_ms=2
+ts=2026-08-27T02:47:07Z level=info msg="pool checkout" used=64 max=100 wait_ms=2
+ts=2026-08-27T02:47:10Z level=info msg="pool checkout" used=62 max=100 wait_ms=1
+ts=2026-08-27T02:47:13Z level=info msg="pool drained" used=0 max=100 wait_ms=0

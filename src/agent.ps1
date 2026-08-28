@@ -6,6 +6,31 @@ $script:TotalPromptTokens = 0
 $script:TotalCompletionTokens = 0
 $script:Todos = @()
 
+# auto_continue: when a turn ends with a tutorial telling the USER what to run,
+# nudge the model once with this note and give it another round to act itself.
+$script:AutoContinueNote = '<system-note>Your last reply described steps for the user to perform instead of performing them. You have run_powershell and file tools: do the task NOW yourself. If a command fails, read exit_code and stderr, diagnose, and try a different approach (2-3 attempts) before giving up. No UAC elevation is possible - prefer user-scoped installs (winget --scope user, pip --user, -Scope CurrentUser) and non-interactive flags. Only stop to ask the user if truly blocked (explicit permission denial, or elevation is genuinely unavoidable). Do not repeat instructions to the user - act.</system-note>'
+
+function Test-SenseiPassiveReply {
+    # Heuristic: does this final-looking assistant message read like a tutorial
+    # telling the USER to run things, instead of the agent doing them itself?
+    param([string]$Content)
+    if (-not $Content) { return $false }
+    # the non-streaming path keeps <think> blocks (openai.ps1 strips only when streaming)
+    $t = [regex]::Replace($Content, '(?s)<think>.*?</think>', '')
+    if ($t -match '(?im)^\s*(?:#+\s*|\*{1,2}|\d+[.)]\s*)*step\s+\d') { return $true }
+    $markers = @(
+        '(?i)\b(?:run|execute|paste|type)\s+(?:this|that|these|the following)\b'
+        '(?i)\bfollowing\s+(?:command|script|steps?)\b'
+        '(?i)\bas\s+(?:an?\s+)?administrator\b'
+        '(?i)\byou\s+can\s+(?:run|install|then\s+run)\b'
+        '(?im)^\s*let me know\b'
+        '(?im)^\s*(?:then\s+)?(?:open|launch|start)\s+(?:powershell|windows\s+terminal|a\s+terminal|cmd)\b'
+    )
+    $hits = 0
+    foreach ($rx in $markers) { if ($t -match $rx) { $hits++ } }
+    return ($hits -ge 2)
+}
+
 function Show-ToolCall {
     param([string]$Name, [hashtable]$ToolArgs, [int]$Depth = 0)
     $argStr = ''
@@ -83,6 +108,7 @@ function Invoke-AgentLoop {
         [switch]$AllowStream
     )
     $result = @{ FinalText = $null; FinishReason = $null; Aborted = $false; Rounds = 0 }
+    $nudged = $false
     for ($round = 1; $round -le $MaxRounds; $round++) {
         $result.Rounds = $round
         $resp = $null
@@ -112,7 +138,16 @@ function Invoke-AgentLoop {
             $script:TotalCompletionTokens += [int]$resp.usage.completion_tokens
         }
 
-        if ($choice.finish_reason -ne 'tool_calls' -or -not $msg.tool_calls) {
+        if (-not $msg.tool_calls) {
+            # auto_continue: passive tutorial answer with tools available → nudge once and re-run
+            if ($Depth -eq 0 -and -not $nudged -and [bool]$script:Config.auto_continue -and
+                -not $script:PlanMode -and $choice.finish_reason -ne 'length' -and
+                $round -lt $MaxRounds -and (Test-SenseiPassiveReply -Content ([string]$msg.content))) {
+                $nudged = $true
+                Write-SenseiNote '(auto-continue: doing it rather than describing it)'
+                $Messages.Add(@{ role = 'user'; content = $script:AutoContinueNote })
+                continue
+            }
             $result.FinalText = $msg.content
             $result.FinishReason = $choice.finish_reason
             if ($Depth -eq 0) {

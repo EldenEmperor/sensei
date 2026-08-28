@@ -298,6 +298,56 @@ $r = Invoke-Tool 'log_baseline' @{ action = 'diff'; path = $newLog; name = 'b1' 
 Assert ($r -match 'NEW error' -and $r -match 'Kafka') 'log_baseline diff flags new template'
 Assert ($r -match 'COUNT SPIKES' -and $r -match 'Payment') 'log_baseline diff flags count spike'
 
+Write-Host 'log_investigate:'
+$fx = Join-Path $PSScriptRoot 'fixtures'
+# generated app.log: timestamped text, two ts styles, stack blocks, one rare FATAL
+$r = Invoke-Tool 'log_investigate' @{ path = $log }
+Assert ($r -match 'timestamped-text') 'investigate: family timestamped-text'
+Assert ($r -match 'iso8601' -and $r -match 'us-legacy') 'investigate: both timestamp styles detected'
+Assert ($r -match '(?i)rare' -and $r -match 'OutOfMemoryException') 'investigate: FATAL OOM surfaced as rare event'
+Assert ($r -match '(?i)continuation|block') 'investigate: stack-trace continuation blocks detected'
+# cache behavior: hit, invalidation on change, full-fingerprint validation
+$r2 = Invoke-Tool 'log_investigate' @{ path = $log }
+Assert ($r2 -match '\(cached') 'investigate: second call served from cache'
+Add-Content -LiteralPath $log -Value '2026-08-27 03:59:59.000 [INFO] appended after analysis'
+$r3 = Invoke-Tool 'log_investigate' @{ path = $log }
+Assert ($r3 -notmatch '\(cached') 'investigate: cache invalidated on file change'
+$mapFile = Get-ChildItem (Join-Path $script:ConfigDir 'formats') -Filter '*.json' |
+    Sort-Object LastWriteTime -Descending | Select-Object -First 1
+$mj = Get-Content $mapFile.FullName -Raw | ConvertFrom-Json -AsHashtable
+$mj.fingerprint = 'bogus'
+ConvertTo-Json -InputObject $mj -Depth 12 | Set-Content $mapFile.FullName -Encoding utf8NoBOM
+Assert ((Invoke-Tool 'log_investigate' @{ path = $log }) -notmatch '\(cached') 'investigate: stored fingerprint mismatch forces rebuild'
+# family detection across fixtures
+$rj = Invoke-Tool 'log_investigate' @{ path = "$fx\sample-jsonl.log" }
+Assert ($rj -match 'json-lines') 'investigate: json-lines family'
+Assert ($rj -match 'duration_ms' -and $rj -match '\bint\b') 'investigate: field types inferred'
+Assert ($rj -match '(?i)severe') 'investigate: extra level vocabulary found'
+Assert ((Invoke-Tool 'log_investigate' @{ path = "$fx\sample-logfmt.log" }) -match 'logfmt') 'investigate: logfmt family'
+Assert ((Invoke-Tool 'log_investigate' @{ path = "$fx\sample-access.log" }) -match 'apache-access') 'investigate: apache access family'
+$rc = Invoke-Tool 'log_investigate' @{ path = "$fx\sample.csv" }
+Assert ($rc -match '\bcsv\b' -and $rc -match 'component') 'investigate: csv family + header columns'
+# hints consumption: epoch-ms json-lines is unusable before a map, usable after
+$epochLog = Join-Path $tmp 'epoch.log'
+Copy-Item "$fx\sample-jsonl-epoch.log" $epochLog -Force
+$before = Invoke-Tool 'log_stats' @{ path = $epochLog }
+Assert ($before -match 'no recognizable timestamps') 'epoch json-lines: no time range without a map'
+[void](Invoke-Tool 'log_investigate' @{ path = $epochLog })
+$after = Invoke-Tool 'log_stats' @{ path = $epochLog }
+Assert ($after -match 'time range: \d{4}') 'log_stats gains time range from format map'
+$sl = Invoke-Tool 'log_slice' @{ path = $epochLog; from_time = '2026-08-26 00:00:00'; to_time = '2026-08-29 00:00:00' }
+Assert ($sl -notmatch 'no lines in that time range' -and $sl -match 'batch processed') 'log_slice time filter works via hints'
+# template placeholder upgrades
+Assert ((Get-LogTemplate '2026-01-01 00:00:00 conn from 10.0.0.7:443 key=abc ok') -match '<ip>') 'template: <ip> placeholder'
+Assert ((Get-LogTemplate 'x key=order:12345 hit=True') -match 'key=<v>') 'template: key=value collapsed'
+# edge cases: empty and binary files
+$emptyLog = Join-Path $tmp 'empty.log'
+[System.IO.File]::WriteAllText($emptyLog, '')
+Assert ((Invoke-Tool 'log_investigate' @{ path = $emptyLog }) -match '(?i)empty') 'investigate: empty file graceful'
+$binLog = Join-Path $tmp 'bin.log'
+[System.IO.File]::WriteAllBytes($binLog, [byte[]](0, 1, 2, 0, 65, 66, 0))
+Assert ((Invoke-Tool 'log_investigate' @{ path = $binLog }) -match '(?i)binary') 'investigate: binary file detected, no crash'
+
 Write-Host 'log_search (stubbed embeddings):'
 $memLog = Join-Path $tmp 'mem.log'
 Set-Content -Path $memLog -Value "2026-01-01 00:00:01 [ERROR] OutOfMemoryException heap exhausted`n2026-01-01 00:00:02 [ERROR] OutOfMemoryException heap exhausted`n2026-01-01 00:00:03 [ERROR] OutOfMemoryException heap exhausted`n2026-01-01 00:00:04 [ERROR] Disk write failed no space left`n2026-01-01 00:00:05 [ERROR] Disk write failed no space left"
@@ -445,6 +495,92 @@ Assert ($msgs[1].content -match 'AUTO SUMMARY') 'auto-compact summarizes old exc
 Assert ($msgs[2].content -eq 'recent question') 'auto-compact cut lands on a user boundary'
 $toolIdx = -1; for ($i = 0; $i -lt $msgs.Count; $i++) { if ($msgs[$i].role -eq 'tool') { $toolIdx = $i } }
 Assert ($toolIdx -gt 0 -and $msgs[$toolIdx - 1].tool_calls) 'auto-compact keeps tool pair intact'
+
+# ============================================================ auto-continue nudge
+Write-Host 'auto-continue nudge:'
+function New-StubStop {
+    param([string]$Text, [string]$Finish = 'stop', $ToolCalls = $null)
+    $m = @{ role = 'assistant'; content = $Text }
+    if ($ToolCalls) { $m.tool_calls = $ToolCalls }
+    return @{ choices = @(@{ message = $m; finish_reason = $Finish }); usage = @{ prompt_tokens = 1; completion_tokens = 1 } }
+}
+$passive = "To install wget, follow these steps:`n**Step 1**: Open PowerShell as Administrator`n**Step 2**: Run the following command:`nchoco install wget`nLet me know if you run into issues!"
+
+# detector unit tests
+Assert (Test-SenseiPassiveReply -Content $passive) 'detector: step-by-step tutorial'
+Assert (Test-SenseiPassiveReply -Content "Run the following command in your terminal.`nLet me know if that works") 'detector: two markers, no Step'
+Assert (Test-SenseiPassiveReply -Content "<think>I should just tell them how</think>$passive") 'detector: think block stripped, tutorial found'
+Assert (-not (Test-SenseiPassiveReply -Content "<think>Step 1: run this. Let me know</think>Installed wget 1.21 via winget.")) 'detector: tutorial only inside think block ignored'
+Assert (-not (Test-SenseiPassiveReply -Content 'Installed wget 1.21 via winget --scope user; verified with wget --version.')) 'detector: active answer not flagged'
+Assert (-not (Test-SenseiPassiveReply -Content $null)) 'detector: null content'
+Assert (-not (Test-SenseiPassiveReply -Content 'You can run log_stats on this next time.')) 'detector: single marker not enough'
+
+# nudge fires, model recovers with tool use
+$script:StubQueue.Enqueue((New-StubStop -Text $passive))
+$script:StubQueue.Enqueue(@{
+    choices = @(@{ message = @{ role = 'assistant'; content = $null; tool_calls = @(
+        @{ id = 'call_n1'; type = 'function'; function = @{ name = 'read_file'; arguments = (ConvertTo-Json -InputObject @{ path = "$tmp\x.txt" } -Compress) } }
+    ) }; finish_reason = 'tool_calls' })
+    usage = @{ prompt_tokens = 1; completion_tokens = 1 }
+})
+$script:StubQueue.Enqueue((New-StubStop -Text 'installed it'))
+$msgs = [System.Collections.Generic.List[object]]::new()
+$msgs.Add(@{ role = 'system'; content = 'test' })
+$msgs.Add(@{ role = 'user'; content = 'install wget for me' })
+$r = Invoke-AgentLoop -Messages $msgs -Depth 0
+Assert ($r.FinalText -eq 'installed it') 'nudge: final answer comes from recovery round'
+Assert ($r.Rounds -ge 3) 'nudge: extra rounds consumed'
+$nudges = @($msgs | Where-Object { $_.role -eq 'user' -and [string]$_.content -match '<system-note>.*do the task NOW' })
+Assert ($nudges.Count -eq 1) 'nudge: exactly one system-note injected'
+$pIdx = -1; $nIdx = -1
+for ($i = 0; $i -lt $msgs.Count; $i++) {
+    if ($msgs[$i].role -eq 'assistant' -and [string]$msgs[$i].content -match 'Step 1' -and $pIdx -lt 0) { $pIdx = $i }
+    if ($msgs[$i].role -eq 'user' -and [string]$msgs[$i].content -match '<system-note>' -and $nIdx -lt 0) { $nIdx = $i }
+}
+Assert ($pIdx -ge 0 -and $nIdx -eq $pIdx + 1) 'nudge: note directly follows the passive reply'
+
+# cap: one nudge per turn — a second passive reply returns normally
+$script:StubQueue.Enqueue((New-StubStop -Text $passive))
+$script:StubQueue.Enqueue((New-StubStop -Text $passive))
+$msgs = [System.Collections.Generic.List[object]]::new()
+$msgs.Add(@{ role = 'system'; content = 'test' })
+$msgs.Add(@{ role = 'user'; content = 'install wget for me' })
+$r = Invoke-AgentLoop -Messages $msgs -Depth 0
+Assert ($r.FinalText -match 'Step 1') 'nudge cap: second passive reply returned as final'
+Assert ($script:StubQueue.Count -eq 0) 'nudge cap: queue exactly drained (no second nudge)'
+Assert (@($msgs | Where-Object { [string]$_.content -match '<system-note>.*do the task NOW' }).Count -eq 1) 'nudge cap: one note only'
+
+# negative: a normal answer never nudges
+$script:StubQueue.Enqueue((New-StubStop -Text 'the log shows an OOM at 02:47:13'))
+$msgs = [System.Collections.Generic.List[object]]::new()
+$msgs.Add(@{ role = 'system'; content = 'test' })
+$msgs.Add(@{ role = 'user'; content = 'what crashed?' })
+$r = Invoke-AgentLoop -Messages $msgs -Depth 0
+Assert ($msgs.Count -eq 3 -and $r.Rounds -eq 1) 'nudge negative: active answer returns in one round'
+
+# gating: auto_continue=false disables the nudge
+$script:Config.auto_continue = $false
+$script:StubQueue.Enqueue((New-StubStop -Text $passive))
+$msgs = [System.Collections.Generic.List[object]]::new()
+$msgs.Add(@{ role = 'system'; content = 'test' })
+$msgs.Add(@{ role = 'user'; content = 'install wget for me' })
+$r = Invoke-AgentLoop -Messages $msgs -Depth 0
+$script:Config.auto_continue = $true
+Assert ($r.Rounds -eq 1 -and $r.FinalText -match 'Step 1') 'nudge gating: disabled config returns passive reply untouched'
+
+# orphan-tool_calls fix: finish_reason=stop WITH tool_calls still executes them
+$script:StubQueue.Enqueue((New-StubStop -Text 'let me check' -Finish 'stop' -ToolCalls @(
+    @{ id = 'call_s'; type = 'function'; function = @{ name = 'read_file'; arguments = (ConvertTo-Json -InputObject @{ path = "$tmp\x.txt" } -Compress) } }
+)))
+$script:StubQueue.Enqueue((New-StubStop -Text 'file contains BETA'))
+$msgs = [System.Collections.Generic.List[object]]::new()
+$msgs.Add(@{ role = 'system'; content = 'test' })
+$msgs.Add(@{ role = 'user'; content = 'check x.txt' })
+$r = Invoke-AgentLoop -Messages $msgs -Depth 0
+$orphanTool = @($msgs | Where-Object { $_.role -eq 'tool' -and $_.tool_call_id -eq 'call_s' })
+Assert ($orphanTool.Count -eq 1) 'orphan fix: stop+tool_calls executes the tool'
+Assert ($orphanTool[0].content -match 'BETA') 'orphan fix: tool result captured'
+Assert ($r.Rounds -eq 2 -and $r.FinalText -eq 'file contains BETA') 'orphan fix: loop continues to a real final answer'
 
 # ============================================================ MCP (mock server)
 Write-Host 'mcp (mock server):'

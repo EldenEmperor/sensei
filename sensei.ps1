@@ -22,7 +22,7 @@ if ($PSVersionTable.PSEdition -ne 'Core' -or $PSVersionTable.PSVersion.Major -lt
 $OutputEncoding = [System.Text.UTF8Encoding]::new()
 
 $script:SenseiRoot    = $PSScriptRoot
-$script:SenseiVersion = '0.4.0'
+$script:SenseiVersion = '0.5.0'
 $script:YoloMode      = $false
 $script:LocalMode     = $false
 $script:PrintMode     = $false
@@ -30,6 +30,7 @@ $script:PlanMode      = $false
 $script:ModelOverride = $null
 $script:PrintPrompt   = $null
 $script:ResumeFlag    = $false
+$script:InvestigatePath = $null
 $script:SessionId     = [guid]::NewGuid().ToString('n').Substring(0, 12)
 
 for ($i = 0; $i -lt $args.Count; $i++) {
@@ -48,14 +49,18 @@ for ($i = 0; $i -lt $args.Count; $i++) {
     } elseif ($arg -match '^--?model$') {
         if ($i + 1 -lt $args.Count) { $script:ModelOverride = [string]$args[++$i] }
         else { Write-Host 'sensei: --model requires a value'; exit 1 }
+    } elseif ($arg -match '^--?investigate$') {
+        if ($i + 1 -lt $args.Count) { $script:InvestigatePath = [string]$args[++$i] }
+        else { Write-Host 'sensei: --investigate requires a log file path'; exit 1 }
     } elseif ($arg -match '^--?(help|h|\?)$') {
-        Write-Host 'usage: sensei [--local] [--model <name>] [--yolo] [--resume] [-p <prompt>]'
+        Write-Host 'usage: sensei [--local] [--model <name>] [--yolo] [--resume] [--investigate <path>] [-p <prompt>]'
         Write-Host ''
         Write-Host '  --local         use a local Ollama model instead of OpenAI (no API key needed)'
         Write-Host '  --model <name>  override the configured model for this session'
         Write-Host '  --yolo          skip all tool permission prompts (alias: --dangerously-skip-permissions)'
         Write-Host '  --resume        pick a previous session to continue'
         Write-Host '  --plan          start in plan mode (read-only until you approve a plan)'
+        Write-Host '  --investigate <path>  map the log''s structure on startup, then continue interactively'
         Write-Host '  -p <prompt>     print mode: run one prompt non-interactively and exit'
         exit 0
     } else {
@@ -99,6 +104,15 @@ try {
         Invoke-AgentTurn $script:PrintPrompt
     } else {
         if ($script:ResumeFlag) { Show-ResumePicker }
+        if ($script:InvestigatePath) {
+            $ip = Resolve-SenseiPath $script:InvestigatePath
+            if (Test-Path -LiteralPath $ip -PathType Leaf) {
+                try { Invoke-AgentTurn ($script:InvestigatePrompt -replace '<PATH>', $ip) }
+                catch [System.OperationCanceledException] { Write-SenseiNote '(aborted)' }
+            } else {
+                Write-SenseiNote "--investigate: file not found: $ip"
+            }
+        }
         Start-SenseiRepl
     }
 } finally {

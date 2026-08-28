@@ -1,0 +1,10 @@
+{"ts":1787798760000,"level":"info","msg":"worker started","worker":1,"seq":1}
+{"ts":1787798790000,"level":"info","msg":"batch processed","worker":1,"items":250,"seq":2}
+{"ts":1787798820000,"level":"info","msg":"batch processed","worker":2,"items":244,"seq":3}
+{"ts":1787798850000,"level":"info","msg":"batch processed","worker":1,"items":251,"seq":4}
+{"ts":1787798880000,"level":"warn","msg":"queue depth rising","depth":1200,"seq":5}
+{"ts":1787798910000,"level":"info","msg":"batch processed","worker":2,"items":247,"seq":6}
+{"ts":1787798940000,"level":"error","msg":"batch failed","worker":1,"reason":"deadlock","seq":7}
+{"ts":1787798970000,"level":"info","msg":"batch retried","worker":1,"items":251,"seq":8}
+{"ts":1787799000000,"level":"info","msg":"batch processed","worker":2,"items":239,"seq":9}
+{"ts":1787799030000,"level":"info","msg":"worker stopped","worker":1,"seq":10}

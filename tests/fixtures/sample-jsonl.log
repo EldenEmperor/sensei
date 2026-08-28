@@ -1,0 +1,40 @@
+{"time":"2026-08-27T02:46:01.120Z","level":"info","msg":"request completed","method":"GET","route":"/api/orders","status":200,"duration_ms":57,"req_id":"3f2a9c1e-4b5d-4e6f-8a9b-0c1d2e3f4a5b","user":"u1042"}
+{"time":"2026-08-27T02:46:02.310Z","level":"info","msg":"request completed","method":"GET","route":"/api/orders","status":200,"duration_ms":89,"req_id":"41b0d2f7-9c3e-4a1b-b2c3-d4e5f6a7b8c9","user":"u2210"}
+{"time":"2026-08-27T02:46:03.480Z","level":"info","msg":"request completed","method":"POST","route":"/api/orders","status":201,"duration_ms":132,"req_id":"52c1e3a8-0d4f-4b2c-c3d4-e5f6a7b8c9d0","user":"u1042"}
+{"time":"2026-08-27T02:46:04.650Z","level":"info","msg":"request completed","method":"GET","route":"/api/users","status":200,"duration_ms":41,"req_id":"63d2f4b9-1e5a-4c3d-d4e5-f6a7b8c9d0e1","user":"u3305"}
+{"time":"2026-08-27T02:46:05.820Z","level":"debug","msg":"cache hit","route":"/api/orders","duration_ms":5,"req_id":"74e3a5c0-2f6b-4d4e-e5f6-a7b8c9d0e1f2","user":"u1042"}
+{"time":"2026-08-27T02:46:06.990Z","level":"info","msg":"request completed","method":"GET","route":"/api/orders","status":200,"duration_ms":66,"req_id":"85f4b6d1-3a7c-4e5f-f6a7-b8c9d0e1f2a3","user":"u2210"}
+{"time":"2026-08-27T02:46:08.160Z","level":"warn","msg":"slow query","query":"orders_by_user","duration_ms":890,"req_id":"96a5c7e2-4b8d-4f6a-a7b8-c9d0e1f2a3b4","user":"u3305"}
+{"time":"2026-08-27T02:46:09.330Z","level":"info","msg":"request completed","method":"GET","route":"/api/orders","status":200,"duration_ms":73,"req_id":"a7b6d8f3-5c9e-4a7b-b8c9-d0e1f2a3b4c5","user":"u1042"}
+{"time":"2026-08-27T02:46:10.500Z","level":"info","msg":"request completed","method":"DELETE","route":"/api/sessions","status":204,"duration_ms":22,"req_id":"b8c7e9a4-6d0f-4b8c-c9d0-e1f2a3b4c5d6","user":"u2210"}
+{"time":"2026-08-27T02:46:11.670Z","level":"severe","msg":"replication lag critical","lag_s":48,"replica":"db-replica-2","req_id":"c9d8f0b5-7e1a-4c9d-d0e1-f2a3b4c5d6e7"}
+{"time":"2026-08-27T02:46:12.840Z","level":"info","msg":"request completed","method":"GET","route":"/api/orders","status":200,"duration_ms":58,"req_id":"d0e9a1c6-8f2b-4d0e-e1f2-a3b4c5d6e7f8","user":"u3305"}
+{"time":"2026-08-27T02:46:14.010Z","level":"info","msg":"request completed","method":"GET","route":"/api/users","status":200,"duration_ms":39,"req_id":"e1f0b2d7-9a3c-4e1f-f2a3-b4c5d6e7f8a9","user":"u1042"}
+{"time":"2026-08-27T02:46:15.180Z","level":"error","msg":"upstream timeout","upstream":"payments","status":504,"duration_ms":3000,"req_id":"f2a1c3e8-0b4d-4f2a-a3b4-c5d6e7f8a9b0","user":"u2210"}
+{"time":"2026-08-27T02:46:16.350Z","level":"info","msg":"request completed","method":"GET","route":"/api/orders","status":200,"duration_ms":61,"req_id":"03b2d4f9-1c5e-4a3b-b4c5-d6e7f8a9b0c1","user":"u3305"}
+{"time":"2026-08-27T02:46:17.520Z","level":"info","msg":"request completed","method":"POST","route":"/api/orders","status":201,"duration_ms":140,"req_id":"14c3e5a0-2d6f-4b4c-c5d6-e7f8a9b0c1d2","user":"u1042"}
+{"time":"2026-08-27T02:46:18.690Z","level":"debug","msg":"cache hit","route":"/api/users","duration_ms":4,"req_id":"25d4f6b1-3e7a-4c5d-d6e7-f8a9b0c1d2e3","user":"u2210"}
+{"time":"2026-08-27T02:46:19.860Z","level":"severe","msg":"replication lag critical","lag_s":61,"replica":"db-replica-2","req_id":"36e5a7c2-4f8b-4d6e-e7f8-a9b0c1d2e3f4"}
+{"time":"2026-08-27T02:46:21.030Z","level":"info","msg":"request completed","method":"GET","route":"/api/orders","status":200,"duration_ms":55,"req_id":"47f6b8d3-5a9c-4e7f-f8a9-b0c1d2e3f4a5","user":"u3305"}
+{"time":"2026-08-27T02:46:22.200Z","level":"warn","msg":"slow query","query":"orders_by_user","duration_ms":910,"req_id":"58a7c9e4-6b0d-4f8a-a9b0-c1d2e3f4a5b6","user":"u1042"}
+{"time":"2026-08-27T02:46:23.370Z","level":"info","msg":"request completed","method":"GET","route":"/api/orders","status":200,"duration_ms":47,"req_id":"69b8d0f5-7c1e-4a9b-b0c1-d2e3f4a5b6c7","user":"u2210"}
+{"time":"2026-08-27T02:46:24.540Z","level":"info","msg":"request completed","method":"GET","route":"/api/users","status":200,"duration_ms":44,"req_id":"70c9e1a6-8d2f-4b0c-c1d2-e3f4a5b6c7d8","user":"u3305"}
+{"time":"2026-08-27T02:46:25.710Z","level":"error","msg":"license key expired","key_id":"lic-prod-0042","req_id":"81d0f2b7-9e3a-4c1d-d2e3-f4a5b6c7d8e9"}
+{"time":"2026-08-27T02:46:26.880Z","level":"info","msg":"request completed","method":"GET","route":"/api/orders","status":200,"duration_ms":52,"req_id":"92e1a3c8-0f4b-4d2e-e3f4-a5b6c7d8e9f0","user":"u1042"}
+{"time":"2026-08-27T02:46:28.050Z","level":"info","msg":"request completed","method":"GET","route":"/api/orders","status":200,"duration_ms":68,"req_id":"a3f2b4d9-1a5c-4e3f-f4a5-b6c7d8e9f0a1","user":"u2210"}
+{"time":"2026-08-27T02:46:29.220Z","level":"debug","msg":"cache hit","route":"/api/orders","duration_ms":6,"req_id":"b4a3c5e0-2b6d-4f4a-a5b6-c7d8e9f0a1b2","user":"u3305"}
+{"time":"2026-08-27T02:46:30.390Z","level":"info","msg":"request completed","method":"PUT","route":"/api/orders","status":200,"duration_ms":97,"req_id":"c5b4d6f1-3c7e-4a5b-b6c7-d8e9f0a1b2c3","user":"u1042"}
+{"time":"2026-08-27T02:46:31.560Z","level":"info","msg":"request completed","method":"GET","route":"/api/users","status":200,"duration_ms":38,"req_id":"d6c5e7a2-4d8f-4b6c-c7d8-e9f0a1b2c3d4","user":"u2210"}
+{"time":"2026-08-27T02:46:32.730Z","level":"severe","msg":"replication lag critical","lag_s":75,"replica":"db-replica-2","req_id":"e7d6f8b3-5e9a-4c7d-d8e9-f0a1b2c3d4e5"}
+{"time":"2026-08-27T02:46:33.900Z","level":"info","msg":"request completed","method":"GET","route":"/api/orders","status":200,"duration_ms":63,"req_id":"f8e7a9c4-6f0b-4d8e-e9f0-a1b2c3d4e5f6","user":"u3305"}
+{"time":"2026-08-27T02:46:35.070Z","level":"info","msg":"request completed","method":"GET","route":"/api/orders","status":200,"duration_ms":51,"req_id":"09f8b0d5-7a1c-4e9f-f0a1-b2c3d4e5f6a7","user":"u1042"}
+{"time":"2026-08-27T02:46:36.240Z","level":"warn","msg":"slow query","query":"orders_by_user","duration_ms":870,"req_id":"1a09c1e6-8b2d-4f0a-a1b2-c3d4e5f6a7b8","user":"u2210"}
+{"time":"2026-08-27T02:46:37.410Z","level":"info","msg":"request completed","method":"GET","route":"/api/orders","status":200,"duration_ms":59,"req_id":"2b1ad2f7-9c3e-4a1b-b2c3-d4e5f6a7b8c9","user":"u3305"}
+{"time":"2026-08-27T02:46:38.580Z","level":"info","msg":"request completed","method":"GET","route":"/api/users","status":200,"duration_ms":42,"req_id":"3c2be3a8-0d4f-4b2c-c3d4-e5f6a7b8c9d0","user":"u1042"}
+{"time":"2026-08-27T02:46:39.750Z","level":"error","msg":"upstream timeout","upstream":"payments","status":504,"duration_ms":3000,"req_id":"4d3cf4b9-1e5a-4c3d-d4e5-f6a7b8c9d0e1","user":"u2210"}
+{"time":"2026-08-27T02:46:40.920Z","level":"info","msg":"request completed","method":"GET","route":"/api/orders","status":200,"duration_ms":49,"req_id":"5e4da5c0-2f6b-4d4e-e5f6-a7b8c9d0e1f2","user":"u3305"}
+{"time":"2026-08-27T02:46:42.090Z","level":"debug","msg":"cache hit","route":"/api/users","duration_ms":3,"req_id":"6f5eb6d1-3a7c-4e5f-f6a7-b8c9d0e1f2a3","user":"u1042"}
+{"time":"2026-08-27T02:46:43.260Z","level":"info","msg":"request completed","method":"GET","route":"/api/orders","status":200,"duration_ms":71,"req_id":"7a6fc7e2-4b8d-4f6a-a7b8-c9d0e1f2a3b4","user":"u2210"}
+{"time":"2026-08-27T02:46:44.430Z","level":"info","msg":"request completed","method":"POST","route":"/api/orders","status":201,"duration_ms":126,"req_id":"8b7ad8f3-5c9e-4a7b-b8c9-d0e1f2a3b4c5","user":"u3305"}
+{"time":"2026-08-27T02:46:45.600Z","level":"info","msg":"request completed","method":"GET","route":"/api/orders","status":200,"duration_ms":54,"req_id":"9c8be9a4-6d0f-4b8c-c9d0-e1f2a3b4c5d6","user":"u1042"}
+{"time":"2026-08-27T02:46:46.770Z","level":"info","msg":"shutdown requested","signal":"SIGTERM","req_id":"0d9cf0b5-7e1a-4c9d-d0e1-f2a3b4c5d6e7"}

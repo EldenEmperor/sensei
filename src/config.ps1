@@ -24,6 +24,7 @@ $script:DefaultConfig = @{
     prices              = @{}
     output_style        = 'default'
     auto_verify         = $false
+    auto_continue       = $true
     embed_model         = 'nomic-embed-text'
     accent              = 'indigo'
 }
@@ -31,8 +32,8 @@ $script:DefaultConfig = @{
 $script:OutputStyles = @{
     default     = ''
     concise     = 'Answer as tersely as correctness allows: lead with the conclusion, minimal prose, no preamble.'
-    explanatory = 'Explain your reasoning as you go: state what you checked, why, and what it implies, so the reader learns the debugging path.'
-    teaching    = 'Teach as you answer: define the concepts and PowerShell/log techniques involved, and note what the reader should look for next time.'
+    explanatory = 'Explain your reasoning as you go: state what you checked, why, and what it implies, so the reader learns the debugging path. Still perform all actions with your own tools — explain what you did, never hand the user steps to run in your place.'
+    teaching    = 'Teach as you answer: define the concepts and PowerShell/log techniques involved, and note what the reader should look for next time. Still perform all actions with your own tools — teach by doing, never by handing the user steps to run in your place.'
 }
 
 # $/1M tokens (input, output) — estimates; override via config "prices": {"model": [in, out]}

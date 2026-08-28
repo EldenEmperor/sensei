@@ -1,0 +1,21 @@
+timestamp,level,component,message,duration_ms
+2026-08-27 02:46:01,INFO,api,request ok,57
+2026-08-27 02:46:03,INFO,api,request ok,64
+2026-08-27 02:46:05,INFO,worker,batch processed,210
+2026-08-27 02:46:07,INFO,api,request ok,49
+2026-08-27 02:46:09,DEBUG,cache,cache hit,4
+2026-08-27 02:46:11,INFO,api,request ok,71
+2026-08-27 02:46:13,WARN,db,slow query,880
+2026-08-27 02:46:15,INFO,api,request ok,55
+2026-08-27 02:46:17,INFO,worker,batch processed,198
+2026-08-27 02:46:19,INFO,api,request ok,62
+2026-08-27 02:46:21,ERROR,db,connection reset,15
+2026-08-27 02:46:23,INFO,api,request ok,58
+2026-08-27 02:46:25,DEBUG,cache,cache hit,3
+2026-08-27 02:46:27,INFO,api,request ok,66
+2026-08-27 02:46:29,WARN,db,slow query,910
+2026-08-27 02:46:31,INFO,worker,batch processed,205
+2026-08-27 02:46:33,INFO,api,request ok,53
+2026-08-27 02:46:35,INFO,api,request ok,60
+2026-08-27 02:46:37,ERROR,db,connection reset,12
+2026-08-27 02:46:39,INFO,api,request ok,47

@@ -67,6 +67,7 @@ function Invoke-SlashCommand {
             Write-Host '  /cost            token usage and estimated cost'
             Write-Host '  /memory          show loaded SENSEI.md memory files'
             Write-Host '  /init            explore this directory and write a SENSEI.md'
+            Write-Host '  /investigate [path]  deep-map a log file''s structure (default: newest .log in cwd)'
             Write-Host '  /resume          pick a previous session to continue'
             Write-Host '  /exit            quit (also /quit, or Ctrl+D)'
             $custom = Get-SenseiCustomCommandNames
@@ -200,6 +201,22 @@ function Invoke-SlashCommand {
         }
         '/init' {
             try { Invoke-AgentTurn $script:InitPrompt }
+            catch [System.OperationCanceledException] { Write-SenseiNote '(aborted)' }
+        }
+        '/investigate' {
+            $target = $arg
+            if (-not $target) {
+                $newest = Get-ChildItem -LiteralPath (Get-Location).Path -Filter '*.log' -File |
+                    Sort-Object LastWriteTime -Descending | Select-Object -First 1
+                if ($newest) {
+                    $target = $newest.FullName
+                    Write-SenseiNote "no path given — using newest .log in cwd: $($newest.Name)"
+                } else {
+                    Write-SenseiNote 'usage: /investigate <path-to-log> (no *.log files found in the current directory)'
+                    break
+                }
+            }
+            try { Invoke-AgentTurn ($script:InvestigatePrompt -replace '<PATH>', $target) }
             catch [System.OperationCanceledException] { Write-SenseiNote '(aborted)' }
         }
         '/resume' {
