@@ -1,0 +1,29 @@
+{
+  "name": "sensei",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Sensei — terminal AI agent for log debugging (TypeScript variant)",
+  "bin": {
+    "sensei-ts": "./dist/cli/main.js"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "tsx src/cli/main.ts",
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "fast-glob": "^3.3.3",
+    "openai": "^7.8.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.4.0",
+    "tsx": "^4.23.12",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.11"
+  }
+}
