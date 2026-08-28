@@ -5,7 +5,8 @@ import { render } from 'ink-testing-library';
 import React from 'react';
 import { describe, expect, it } from 'vitest';
 import { SenseiAgent } from '../src/core/agent.js';
-import { App, DeferredHost } from '../src/tui/App.js';
+import type { ChatClient } from '../src/core/chat/client.js';
+import { App, DeferredHost, type SpriteAnim } from '../src/tui/App.js';
 import { FakeChatClient, makeStore, makeTempDir, stopResponse } from './helpers.js';
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -101,6 +102,40 @@ describe('Ink App', () => {
     await sleep(200);
     const toolMsg = agent.messages.find((m) => m.role === 'tool');
     expect(toolMsg?.content).toMatch(/Wrote 5 chars/);
+  });
+
+  it('plays the thinking sprite during a turn and the sheath flourish after', async () => {
+    const slowClient: ChatClient = {
+      chat: async () => {
+        await sleep(250);
+        return stopResponse('done thinking');
+      },
+    };
+    const tmp = makeTempDir('sensei-ts-anim-');
+    const store = makeStore(tmp);
+    store.config.theme = true; // sprites require theming
+    store.config.stream = false;
+    const host = new DeferredHost();
+    const agent = new SenseiAgent({ configStore: store, host, permissionPolicy: { mode: 'yolo' }, chatClient: slowClient });
+    const sprites: Record<string, SpriteAnim> = {
+      thinking: { delayMs: 100, mode: 'loop', frames: [['THINK-SPRITE-A'], ['THINK-SPRITE-B']] },
+      slash: { delayMs: 90, mode: 'loop', frames: [['SLASH-SPRITE']] },
+      summon: { delayMs: 100, mode: 'loop', frames: [['SUMMON-SPRITE']] },
+      sheath: { delayMs: 200, mode: 'once', frames: [['SHEATH-SPRITE']] },
+    };
+    const { lastFrame, stdin } = render(
+      React.createElement(App, { agent, host, version: 'test', bannerFrames: [], sprites }),
+    );
+    await sleep(50);
+    stdin.write('think about it');
+    await sleep(20);
+    stdin.write('\r');
+    await sleep(120);
+    expect(lastFrame()).toMatch(/THINK-SPRITE/); // model pending, no tool → thinking
+    await sleep(220); // turn completes → sheath flourish window (200ms + grace)
+    expect(lastFrame()).toContain('SHEATH-SPRITE');
+    await sleep(400);
+    expect(lastFrame()).not.toContain('SHEATH-SPRITE'); // flourish over
   });
 
   it('plan mode toggles via /plan and blocks writes', async () => {

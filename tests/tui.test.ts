@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { renderDiffPreview } from '../src/tui/diff.js';
-import { parseBanner } from '../src/tui/index.js';
+import { parseBanner, parseSprites } from '../src/tui/index.js';
 import { renderMarkdown } from '../src/tui/markdown.js';
 import { ACCENT_PRESETS, makeTheme, protectTerminalText, resolveAccent } from '../src/tui/theme.js';
 import { makeTempDir } from './helpers.js';
@@ -75,6 +75,31 @@ describe('banner parsing', () => {
     expect(frames.length).toBeGreaterThan(1);
     const heights = new Set(frames.map((f) => f.lines.length));
     expect(heights.size).toBe(1); // all frames align
+  });
+});
+
+describe('sprite parsing', () => {
+  it('parses animations with delay and mode', () => {
+    const raw =
+      '%%SENSEI-SPRITES v1\n%%ANIM slash 90 loop\n%%FRAME\naa\nbb\n%%FRAME\ncc\ndd\n%%ANIM sheath 120 once\n%%FRAME\nee\n';
+    const anims = parseSprites(raw);
+    expect(Object.keys(anims).sort()).toEqual(['sheath', 'slash']);
+    expect(anims.slash.delayMs).toBe(90);
+    expect(anims.slash.mode).toBe('loop');
+    expect(anims.slash.frames.length).toBe(2);
+    expect(anims.slash.frames[1]).toEqual(['cc', 'dd']);
+    expect(anims.sheath.mode).toBe('once');
+  });
+
+  it('the committed sprite sheet has the four event animations, frames aligned', () => {
+    const here = path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1'));
+    const anims = parseSprites(fs.readFileSync(path.resolve(here, '..', 'assets', 'sprites.txt'), 'utf8'));
+    expect(Object.keys(anims).sort()).toEqual(['sheath', 'slash', 'summon', 'thinking']);
+    for (const anim of Object.values(anims)) {
+      expect(anim.frames.length).toBeGreaterThan(1);
+      const heights = new Set(anim.frames.map((f) => f.length));
+      expect(heights.size).toBe(1);
+    }
   });
 });
 

@@ -60,6 +60,50 @@ function loadBanner(): BannerFrame[] {
   return [];
 }
 
+export interface SpriteAnim {
+  delayMs: number;
+  mode: 'loop' | 'once';
+  frames: string[][];
+}
+
+/** Parse assets/sprites.txt (%%SENSEI-SPRITES v1 / %%ANIM name delay mode / %%FRAME). */
+export function parseSprites(raw: string): Record<string, SpriteAnim> {
+  const lines = raw.split(/\r?\n/);
+  if (!lines[0]?.startsWith('%%SENSEI-SPRITES')) return {};
+  const anims: Record<string, SpriteAnim> = {};
+  let anim: SpriteAnim | null = null;
+  let frame: string[] | null = null;
+  for (const l of lines.slice(1)) {
+    const am = l.match(/^%%ANIM (\S+) (\d+) (loop|once)$/);
+    if (am) {
+      anim = { delayMs: Number(am[2]), mode: am[3] as 'loop' | 'once', frames: [] };
+      anims[am[1]] = anim;
+      frame = null;
+    } else if (l === '%%FRAME') {
+      frame = [];
+      anim?.frames.push(frame);
+    } else if (frame && l !== '') {
+      frame.push(l);
+    }
+  }
+  for (const k of Object.keys(anims)) {
+    anims[k].frames = anims[k].frames.filter((f) => f.length > 0);
+    if (anims[k].frames.length === 0) delete anims[k];
+  }
+  return anims;
+}
+
+function loadSprites(): Record<string, SpriteAnim> {
+  try {
+    const here = path.dirname(fileURLToPath(import.meta.url));
+    const p = path.resolve(here, '..', '..', 'assets', 'sprites.txt');
+    if (fs.existsSync(p)) return parseSprites(fs.readFileSync(p, 'utf8'));
+  } catch {
+    /* no sprites */
+  }
+  return {};
+}
+
 export async function runTui(opts: TuiOptions): Promise<number> {
   const host = new DeferredHost();
   const agent = new SenseiAgent({
@@ -78,6 +122,7 @@ export async function runTui(opts: TuiOptions): Promise<number> {
       host,
       version: opts.version ?? '0.1.0',
       bannerFrames: loadBanner(),
+      sprites: loadSprites(),
       mcp: opts.mcp,
     }),
     { exitOnCtrlC: false },

@@ -49,13 +49,22 @@ export interface BannerFrame {
   delayMs: number;
 }
 
+export interface SpriteAnim {
+  delayMs: number;
+  mode: 'loop' | 'once';
+  frames: string[][];
+}
+
 interface AppProps {
   agent: SenseiAgent;
   host: DeferredHost;
   version: string;
   bannerFrames: BannerFrame[];
+  sprites?: Record<string, SpriteAnim>;
   mcp?: McpManager;
 }
+
+const SUBAGENT_TOOLS = ['task', 'verify', 'task_parallel'];
 
 const HELP_LINES = [
   '  /help            show this help',
@@ -81,7 +90,7 @@ const HELP_LINES = [
   '  custom commands: .sensei\\commands\\<name>.md ($ARGUMENTS substituted)',
 ];
 
-export function App({ agent, host, version, bannerFrames, mcp }: AppProps): React.ReactElement {
+export function App({ agent, host, version, bannerFrames, sprites, mcp }: AppProps): React.ReactElement {
   const { exit } = useApp();
   const nextId = useRef(0);
   const [items, setItems] = useState<Item[]>([]);
@@ -101,6 +110,7 @@ export function App({ agent, host, version, bannerFrames, mcp }: AppProps): Reac
   const [bannerFrozen, setBannerFrozen] = useState(false);
   const bannerFrozenRef = useRef(false);
   const bannerIdxRef = useRef(0);
+  const [flourishStart, setFlourishStart] = useState<number | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const streamRef = useRef('');
 
@@ -152,12 +162,21 @@ export function App({ agent, host, version, bannerFrames, mcp }: AppProps): Reac
     return () => clearInterval(t);
   }, [bannerFrozen, bannerFrames]);
 
-  // spinner
+  // spinner / sprite tick
   useEffect(() => {
-    if (!busy) return;
+    if (!busy && flourishStart === null) return;
     const t = setInterval(() => setFrame((f) => f + 1), 100);
     return () => clearInterval(t);
-  }, [busy]);
+  }, [busy, flourishStart]);
+
+  // the sheath flourish plays once, then clears
+  useEffect(() => {
+    if (flourishStart === null) return;
+    const sheath = sprites?.sheath;
+    const total = sheath ? sheath.frames.length * sheath.delayMs + 60 : 0;
+    const t = setTimeout(() => setFlourishStart(null), total);
+    return () => clearTimeout(t);
+  }, [flourishStart, sprites]);
 
   // wire the host
   useEffect(() => {
@@ -195,6 +214,11 @@ export function App({ agent, host, version, bannerFrames, mcp }: AppProps): Reac
             break;
           case 'usage':
             setTokens({ inTok: e.promptTokens, outTok: e.completionTokens });
+            break;
+          case 'turn-end':
+            if (!e.aborted && e.finishReason !== 'blocked' && sprites?.sheath && theme.enabled) {
+              setFlourishStart(Date.now());
+            }
             break;
           default:
             break;
@@ -568,6 +592,24 @@ export function App({ agent, host, version, bannerFrames, mcp }: AppProps): Reac
   const spinnerLabel = activeTool ? `${activeTool}…` : 'thinking…';
   const modelLabel = getActiveModel(agent.store.config, agent.local) + (agent.local ? ' · local' : '');
 
+  // pick the samurai's move for the moment: slash while a tool runs, summon
+  // while subagents work, idle glint while the model thinks, sheath on finish
+  const spriteFrame = ((): string[] | null => {
+    if (!sprites || !theme.enabled) return null;
+    if (busy && !permReq) {
+      const name = activeTool ? (SUBAGENT_TOOLS.includes(activeTool) ? 'summon' : 'slash') : 'thinking';
+      const anim = sprites[name] ?? sprites.thinking;
+      if (!anim || anim.frames.length === 0) return null;
+      return anim.frames[Math.floor((frame * 100) / anim.delayMs) % anim.frames.length];
+    }
+    if (flourishStart !== null) {
+      const anim = sprites.sheath;
+      if (!anim || anim.frames.length === 0) return null;
+      return anim.frames[Math.min(anim.frames.length - 1, Math.floor((Date.now() - flourishStart) / anim.delayMs))];
+    }
+    return null;
+  })();
+
   return (
     <Box flexDirection="column">
       <Static items={items}>{(item) => <Text key={item.id}>{item.text}</Text>}</Static>
@@ -582,7 +624,20 @@ export function App({ agent, host, version, bannerFrames, mcp }: AppProps): Reac
         </Box>
       ) : null}
       {displayStream ? <Text>{renderMarkdown(displayStream, t)}</Text> : null}
-      {busy && !permReq ? (
+      {spriteFrame ? (
+        <Box flexDirection="row">
+          <Box flexDirection="column">
+            {spriteFrame.map((l, i) => (
+              <Text key={i}>{l}</Text>
+            ))}
+          </Box>
+          {busy ? (
+            <Box flexDirection="column" justifyContent="flex-end" marginLeft={2}>
+              <Text>{t.accent(SPINNER_FRAMES[frame % SPINNER_FRAMES.length]) + ' ' + t.dim(spinnerLabel)}</Text>
+            </Box>
+          ) : null}
+        </Box>
+      ) : busy && !permReq ? (
         <Text>{t.accent(SPINNER_FRAMES[frame % SPINNER_FRAMES.length]) + ' ' + t.dim(spinnerLabel)}</Text>
       ) : null}
       {todos.length > 0 ? (
