@@ -104,10 +104,15 @@ export function App({ agent, host, version, bannerLines, mcp }: AppProps): React
     setItems((prev) => [...prev, { id: nextId.current++, text }]);
   };
 
-  // banner
+  // banner — lines that already carry ANSI (color pixel art) pass through
+  // untouched; plain lines get the accent; with theming off, strip ANSI.
   useEffect(() => {
     const t = theme;
-    const lines = bannerLines.map((l) => t.accent(l));
+    const lines = bannerLines.map((l) => {
+      const hasAnsi = l.includes('\x1b');
+      if (!t.enabled) return hasAnsi ? l.replace(/\x1b\[[0-9;]*m/g, '') : l;
+      return hasAnsi ? l : t.accent(l);
+    });
     const modelLabel = getActiveModel(agent.store.config, agent.local) + (agent.local ? ' (local · ollama)' : '');
     lines.push(t.bold(t.accent('  sensei')) + t.dim(` v${version} · log-debugging agent · model: ${modelLabel}`));
     lines.push(t.dim('  ask about a log file, or /help for commands'));
