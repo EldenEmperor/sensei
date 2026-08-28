@@ -1,14 +1,16 @@
 # convert-image-banner.ps1 — downscale an image into truecolor ANSI half-block
 # art for assets/banner.txt. Windows-only (System.Drawing / GDI+).
 #
-#   pwsh -File scripts\convert-image-banner.ps1 -Path <image> [-Width 46] [-DebugMap]
+#   pwsh -File scripts\convert-image-banner.ps1 -Path <image> [-Width 64] [-DebugMap]
 #
-# Near-black pixels are transparent; fully-gray regions with no blue content
-# (background bands/gradients) are dropped too, so only the subject survives.
+# Built for pixel art: each cell takes the DOMINANT color of its source block
+# (no averaging → crisp edges). Near-black is transparent; fully-gray regions
+# (background bands/gradients) are dropped, except where content crosses them
+# in-column (a sword blade) or they show through inside the silhouette.
 
 param(
     [Parameter(Mandatory)] [string]$Path,
-    [int]$Width = 46,
+    [int]$Width = 64,
     [switch]$DebugMap,
     [string]$OutFile = ''
 )
@@ -19,59 +21,55 @@ $img = [System.Drawing.Bitmap]::FromFile((Resolve-Path -LiteralPath $Path).Path)
 try {
     $srcW = $img.Width; $srcH = $img.Height
     $gridH = [int][Math]::Round($srcH / $srcW * $Width)
-    if ($gridH % 2 -ne 0) { $gridH++ }   # half-blocks pair rows
 
-    # sample each target cell's source block
     $cells = New-Object 'object[,]' $Width, $gridH
     $banded = New-Object 'object[,]' $Width, $gridH
-    $debug = @()
+
     for ($ty = 0; $ty -lt $gridH; $ty++) {
-        $rowDbg = ''
         $sy0 = [int][Math]::Floor($ty * $srcH / $gridH)
-        $sy1 = [int][Math]::Ceiling(($ty + 1) * $srcH / $gridH)
+        $sy1 = [Math]::Max($sy0 + 1, [int][Math]::Ceiling(($ty + 1) * $srcH / $gridH))
         for ($tx = 0; $tx -lt $Width; $tx++) {
             $sx0 = [int][Math]::Floor($tx * $srcW / $Width)
-            $sx1 = [int][Math]::Ceiling(($tx + 1) * $srcW / $Width)
-            $n = 0; $solid = 0; $blue = 0; $gray = 0; $red = 0
-            $sr = 0; $sg = 0; $sb = 0
+            $sx1 = [Math]::Max($sx0 + 1, [int][Math]::Ceiling(($tx + 1) * $srcW / $Width))
+            $n = 0; $black = 0; $grayN = 0; $blueN = 0
+            # histogram of quantized colors → dominant bucket, split by class
+            $solidBuckets = @{}
+            $grayBuckets = @{}
             for ($y = $sy0; $y -lt $sy1; $y += 2) {
                 for ($x = $sx0; $x -lt $sx1; $x += 2) {
                     $p = $img.GetPixel([Math]::Min($x, $srcW - 1), [Math]::Min($y, $srcH - 1))
                     $n++
                     $mx = [Math]::Max($p.R, [Math]::Max($p.G, $p.B))
-                    if ($mx -lt 40) { continue }               # near-black = transparent
-                    $solid++
-                    $sr += $p.R; $sg += $p.G; $sb += $p.B
+                    if ($mx -lt 40) { $black++; continue }
                     $isGray = ([Math]::Abs($p.R - $p.G) -lt 30 -and [Math]::Abs($p.G - $p.B) -lt 30 -and [Math]::Abs($p.R - $p.B) -lt 30)
-                    if ($isGray) { $gray++ }
-                    if ($p.B -gt ($p.R + 25) -and $p.B -gt ($p.G + 10)) { $blue++ }
-                    if ($p.R -gt ($p.B + 40) -and $p.R -gt ($p.G + 40)) { $red++ }
+                    if ($p.B -gt ($p.R + 25) -and $p.B -gt ($p.G + 10)) { $blueN++ }
+                    $key = (($p.R -band 0xE0) -shl 16) -bor (($p.G -band 0xE0) -shl 8) -bor ($p.B -band 0xE0)
+                    $target = if ($isGray) { $grayN++; $grayBuckets } else { $solidBuckets }
+                    if ($target.ContainsKey($key)) {
+                        $e = $target[$key]; $e[0]++; $e[1] += $p.R; $e[2] += $p.G; $e[3] += $p.B
+                    } else {
+                        $target[$key] = @(1, [int]$p.R, [int]$p.G, [int]$p.B)
+                    }
                 }
             }
-            $cell = $null
-            if ($n -gt 0 -and $solid / $n -ge 0.3) {
-                # fully-gray blocks with no blue = background band → drop (but
-                # remember the color: a later pass restores band cells that have
-                # in-column neighbors, i.e. the sword blade crossing the band)
-                $grayFrac = if ($solid) { $gray / $solid } else { 0 }
-                $blueFrac = if ($solid) { $blue / $solid } else { 0 }
-                $avg = @([int]($sr / $solid), [int]($sg / $solid), [int]($sb / $solid))
-                if ($grayFrac -gt 0.85 -and $blueFrac -lt 0.12) {
-                    $banded[$tx, $ty] = $avg
-                } else {
-                    $cell = $avg
-                }
+            if ($n -eq 0) { continue }
+            $solid = $n - $black
+            if ($solid / $n -lt 0.5) { continue }   # black-dominant → transparent (hard edge)
+
+            $dominant = {
+                param($buckets)
+                $best = $null
+                foreach ($e in $buckets.Values) { if ($null -eq $best -or $e[0] -gt $best[0]) { $best = $e } }
+                if ($best) { @([int]($best[1] / $best[0]), [int]($best[2] / $best[0]), [int]($best[3] / $best[0])) } else { $null }
             }
-            $cells[$tx, $ty] = $cell
-            if ($DebugMap) {
-                if ($null -eq $cell) { $rowDbg += '.' }
-                elseif ($red -gt 0 -and $red -ge $blue) { $rowDbg += 'R' }
-                elseif ($cell[0] -gt 200 -and $cell[1] -gt 200 -and $cell[2] -gt 200) { $rowDbg += 'W' }
-                elseif ($cell[2] -gt $cell[0]) { $rowDbg += 'B' }
-                else { $rowDbg += 'g' }
+            # fully-gray cell with no blue = background band → remember for the restore pass
+            if ($grayN / $solid -gt 0.85 -and $blueN / $solid -lt 0.12) {
+                $banded[$tx, $ty] = & $dominant $grayBuckets
+            } else {
+                $colored = & $dominant $solidBuckets
+                $cells[$tx, $ty] = if ($colored) { $colored } else { & $dominant $grayBuckets }
             }
         }
-        if ($DebugMap) { $debug += $rowDbg }
     }
 
     # restore band cells strictly BETWEEN a column's surviving content — the
@@ -93,10 +91,25 @@ try {
         }
     }
 
+    # crop to the content bounding box (pad height to an even row count)
+    $minX = $Width; $maxX = -1; $minY = $gridH; $maxY = -1
+    for ($ty = 0; $ty -lt $gridH; $ty++) {
+        for ($tx = 0; $tx -lt $Width; $tx++) {
+            if ($null -ne $cells[$tx, $ty]) {
+                if ($tx -lt $minX) { $minX = $tx }
+                if ($tx -gt $maxX) { $maxX = $tx }
+                if ($ty -lt $minY) { $minY = $ty }
+                if ($ty -gt $maxY) { $maxY = $ty }
+            }
+        }
+    }
+    if ($maxX -lt 0) { throw 'image reduced to nothing — lower the thresholds' }
+    if ((($maxY - $minY + 1) % 2) -ne 0) { if ($minY -gt 0) { $minY-- } else { $maxY++ } }
+
     if ($DebugMap) {
-        for ($ty = 0; $ty -lt $gridH; $ty++) {
+        for ($ty = $minY; $ty -le $maxY; $ty++) {
             $rowDbg = ''
-            for ($tx = 0; $tx -lt $Width; $tx++) {
+            for ($tx = $minX; $tx -le $maxX; $tx++) {
                 $c = $cells[$tx, $ty]
                 if ($null -eq $c) { $rowDbg += '.' }
                 elseif ($c[0] -gt ($c[2] + 40) -and $c[0] -gt ($c[1] + 40)) { $rowDbg += 'R' }
@@ -110,12 +123,12 @@ try {
 
     $esc = [char]0x1B
     $reset = "$esc[0m"
-    $lines = for ($ty = 0; $ty -lt $gridH; $ty += 2) {
+    $lines = for ($ty = $minY; $ty -le $maxY; $ty += 2) {
         $line = ''
         $open = $false
-        for ($tx = 0; $tx -lt $Width; $tx++) {
+        for ($tx = $minX; $tx -le $maxX; $tx++) {
             $t = $cells[$tx, $ty]
-            $b = $cells[$tx, ($ty + 1)]
+            $b = if (($ty + 1) -le $maxY) { $cells[$tx, ($ty + 1)] } else { $null }
             if ($null -eq $t -and $null -eq $b) {
                 if ($open) { $line += $reset; $open = $false }
                 $line += ' '
@@ -138,7 +151,7 @@ try {
 
     if (-not $OutFile) { $OutFile = Join-Path (Split-Path -Parent $PSScriptRoot) 'assets\banner.txt' }
     ($lines -join "`n") + "`n" | Set-Content -LiteralPath $OutFile -Encoding utf8NoBOM -NoNewline
-    Write-Host "wrote $($lines.Count) lines to $OutFile"
+    Write-Host "wrote $($lines.Count) lines x $($maxX - $minX + 1) cols to $OutFile"
 } finally {
     $img.Dispose()
 }
