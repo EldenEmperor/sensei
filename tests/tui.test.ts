@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { renderDiffPreview } from '../src/tui/diff.js';
+import { parseBanner } from '../src/tui/index.js';
 import { renderMarkdown } from '../src/tui/markdown.js';
 import { ACCENT_PRESETS, makeTheme, protectTerminalText, resolveAccent } from '../src/tui/theme.js';
 import { makeTempDir } from './helpers.js';
@@ -47,6 +48,33 @@ describe('terminal safety', () => {
     const out = renderMarkdown('danger \x1b[2J', plain);
     expect(out).not.toContain('\x1b');
     expect(out).toContain('␛');
+  });
+});
+
+describe('banner parsing', () => {
+  it('plain files become one static frame', () => {
+    const frames = parseBanner('line one\nline two\n');
+    expect(frames.length).toBe(1);
+    expect(frames[0].lines).toEqual(['line one', 'line two']);
+  });
+
+  it('animated format yields frames with delays', () => {
+    const raw = '%%SENSEI-BANNER-ANIM v1\n%%FRAME 100\naaa\nbbb\n%%FRAME 250\nccc\nddd\n';
+    const frames = parseBanner(raw);
+    expect(frames.length).toBe(2);
+    expect(frames[0].delayMs).toBe(100);
+    expect(frames[0].lines).toEqual(['aaa', 'bbb']);
+    expect(frames[1].delayMs).toBe(250);
+    expect(frames[1].lines).toEqual(['ccc', 'ddd']);
+  });
+
+  it('the committed banner parses as a multi-frame animation', () => {
+    const here = path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1'));
+    const p = path.resolve(here, '..', 'assets', 'banner.txt');
+    const frames = parseBanner(fs.readFileSync(p, 'utf8'));
+    expect(frames.length).toBeGreaterThan(1);
+    const heights = new Set(frames.map((f) => f.lines.length));
+    expect(heights.size).toBe(1); // all frames align
   });
 });
 

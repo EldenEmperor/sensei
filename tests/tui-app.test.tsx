@@ -29,7 +29,7 @@ describe('Ink App', () => {
   it('boots with the banner and answers /help', async () => {
     const { agent, host } = makeTuiAgent(new FakeChatClient());
     const { lastFrame, stdin } = render(
-      React.createElement(App, { agent, host, version: 'test', bannerLines: ['██ banner ██'] }),
+      React.createElement(App, { agent, host, version: 'test', bannerFrames: [{ lines: ['██ banner ██'], delayMs: 100 }] }),
     );
     await sleep(50);
     expect(lastFrame()).toContain('██ banner ██');
@@ -47,7 +47,7 @@ describe('Ink App', () => {
     fake.enqueue(stopResponse('# Result\nthe **answer** is 42'));
     const { agent, host } = makeTuiAgent(fake);
     const { lastFrame, stdin } = render(
-      React.createElement(App, { agent, host, version: 'test', bannerLines: [] }),
+      React.createElement(App, { agent, host, version: 'test', bannerFrames: [] }),
     );
     await sleep(50);
     stdin.write('what is the answer?');
@@ -88,7 +88,7 @@ describe('Ink App', () => {
     fake.enqueue(stopResponse('written'));
     const { agent, host } = makeTuiAgent(fake);
     const { lastFrame, stdin } = render(
-      React.createElement(App, { agent, host, version: 'test', bannerLines: [] }),
+      React.createElement(App, { agent, host, version: 'test', bannerFrames: [] }),
     );
     await sleep(50);
     stdin.write('write hello to out.txt');
@@ -107,7 +107,7 @@ describe('Ink App', () => {
     const fake = new FakeChatClient();
     const { agent, host } = makeTuiAgent(fake);
     const { lastFrame, stdin } = render(
-      React.createElement(App, { agent, host, version: 'test', bannerLines: [] }),
+      React.createElement(App, { agent, host, version: 'test', bannerFrames: [] }),
     );
     await sleep(50);
     stdin.write('/plan');

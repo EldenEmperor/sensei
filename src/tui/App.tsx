@@ -44,11 +44,16 @@ interface Item {
   text: string;
 }
 
+export interface BannerFrame {
+  lines: string[];
+  delayMs: number;
+}
+
 interface AppProps {
   agent: SenseiAgent;
   host: DeferredHost;
   version: string;
-  bannerLines: string[];
+  bannerFrames: BannerFrame[];
   mcp?: McpManager;
 }
 
@@ -76,7 +81,7 @@ const HELP_LINES = [
   '  custom commands: .sensei\\commands\\<name>.md ($ARGUMENTS substituted)',
 ];
 
-export function App({ agent, host, version, bannerLines, mcp }: AppProps): React.ReactElement {
+export function App({ agent, host, version, bannerFrames, mcp }: AppProps): React.ReactElement {
   const { exit } = useApp();
   const nextId = useRef(0);
   const [items, setItems] = useState<Item[]>([]);
@@ -92,6 +97,10 @@ export function App({ agent, host, version, bannerLines, mcp }: AppProps): React
   const history = useRef<string[]>([]);
   const historyIdx = useRef(-1);
   const resumeList = useRef<string[]>([]);
+  const [bannerIdx, setBannerIdx] = useState(0);
+  const [bannerFrozen, setBannerFrozen] = useState(false);
+  const bannerFrozenRef = useRef(false);
+  const bannerIdxRef = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
   const streamRef = useRef('');
 
@@ -100,26 +109,48 @@ export function App({ agent, host, version, bannerLines, mcp }: AppProps): React
     return makeTheme(accent, Boolean(agent.store.config.theme));
   }, [agent.store.config.accent, agent.store.config.theme]);
 
-  const push = (text: string): void => {
-    setItems((prev) => [...prev, { id: nextId.current++, text }]);
-  };
-
   // banner — lines that already carry ANSI (color pixel art) pass through
   // untouched; plain lines get the accent; with theming off, strip ANSI.
-  useEffect(() => {
+  const decorateBanner = (l: string): string => {
+    const hasAnsi = l.includes('\x1b');
+    if (!theme.enabled) return hasAnsi ? l.replace(/\x1b\[[0-9;]*m/g, '') : l;
+    return hasAnsi ? l : theme.accent(l);
+  };
+
+  const titleLines = (): string[] => {
     const t = theme;
-    const lines = bannerLines.map((l) => {
-      const hasAnsi = l.includes('\x1b');
-      if (!t.enabled) return hasAnsi ? l.replace(/\x1b\[[0-9;]*m/g, '') : l;
-      return hasAnsi ? l : t.accent(l);
-    });
     const modelLabel = getActiveModel(agent.store.config, agent.local) + (agent.local ? ' (local · ollama)' : '');
-    lines.push(t.bold(t.accent('  sensei')) + t.dim(` v${version} · log-debugging agent · model: ${modelLabel}`));
-    lines.push(t.dim('  ask about a log file, or /help for commands'));
-    lines.push('');
-    setItems(lines.map((text) => ({ id: nextId.current++, text })));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    return [
+      t.bold(t.accent('  sensei')) + t.dim(` v${version} · log-debugging agent · model: ${modelLabel}`),
+      t.dim('  ask about a log file, or /help for commands'),
+      '',
+    ];
+  };
+
+  // Animated banners play while the app idles at the fresh prompt. The first
+  // transcript entry freezes the current frame into scrollback (<Static>).
+  const push = (text: string): void => {
+    const pre: Item[] = [];
+    if (!bannerFrozenRef.current) {
+      bannerFrozenRef.current = true;
+      setBannerFrozen(true);
+      const frame = bannerFrames[bannerIdxRef.current % Math.max(1, bannerFrames.length)];
+      if (frame) for (const l of frame.lines) pre.push({ id: nextId.current++, text: decorateBanner(l) });
+      for (const l of titleLines()) pre.push({ id: nextId.current++, text: l });
+    }
+    setItems((prev) => [...prev, ...pre, { id: nextId.current++, text }]);
+  };
+
+  // gif loop
+  useEffect(() => {
+    if (bannerFrozen || bannerFrames.length < 2) return;
+    const delay = bannerFrames[0].delayMs || 100;
+    const t = setInterval(() => {
+      bannerIdxRef.current = (bannerIdxRef.current + 1) % bannerFrames.length;
+      setBannerIdx(bannerIdxRef.current);
+    }, delay);
+    return () => clearInterval(t);
+  }, [bannerFrozen, bannerFrames]);
 
   // spinner
   useEffect(() => {
@@ -540,6 +571,16 @@ export function App({ agent, host, version, bannerLines, mcp }: AppProps): React
   return (
     <Box flexDirection="column">
       <Static items={items}>{(item) => <Text key={item.id}>{item.text}</Text>}</Static>
+      {!bannerFrozen && bannerFrames.length > 0 ? (
+        <Box flexDirection="column">
+          {bannerFrames[bannerIdx % bannerFrames.length].lines.map((l, i) => (
+            <Text key={i}>{decorateBanner(l)}</Text>
+          ))}
+          {titleLines().map((l, i) => (
+            <Text key={`t${i}`}>{l}</Text>
+          ))}
+        </Box>
+      ) : null}
       {displayStream ? <Text>{renderMarkdown(displayStream, t)}</Text> : null}
       {busy && !permReq ? (
         <Text>{t.accent(SPINNER_FRAMES[frame % SPINNER_FRAMES.length]) + ' ' + t.dim(spinnerLabel)}</Text>

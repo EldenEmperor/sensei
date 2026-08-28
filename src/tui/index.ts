@@ -22,11 +22,38 @@ export interface TuiOptions {
   mcp?: McpManager;
 }
 
-function loadBanner(): string[] {
+export interface BannerFrame {
+  lines: string[];
+  delayMs: number;
+}
+
+/** Parse assets/banner.txt: either plain ANSI lines (one static frame) or the
+ *  animated format (%%SENSEI-BANNER-ANIM v1 with %%FRAME <delayMs> sections). */
+export function parseBanner(raw: string): BannerFrame[] {
+  const lines = raw.split(/\r?\n/);
+  if (lines[0]?.startsWith('%%SENSEI-BANNER-ANIM')) {
+    const frames: BannerFrame[] = [];
+    let current: BannerFrame | null = null;
+    for (const l of lines.slice(1)) {
+      const m = l.match(/^%%FRAME (\d+)$/);
+      if (m) {
+        current = { lines: [], delayMs: Number(m[1]) };
+        frames.push(current);
+      } else if (current && l !== '') {
+        current.lines.push(l);
+      }
+    }
+    return frames.filter((f) => f.lines.length > 0);
+  }
+  const plain = lines.filter((l) => l !== '');
+  return plain.length > 0 ? [{ lines: plain, delayMs: 100 }] : [];
+}
+
+function loadBanner(): BannerFrame[] {
   try {
     const here = path.dirname(fileURLToPath(import.meta.url));
     const bannerPath = path.resolve(here, '..', '..', 'assets', 'banner.txt');
-    if (fs.existsSync(bannerPath)) return fs.readFileSync(bannerPath, 'utf8').split(/\r?\n/).filter((l) => l !== '');
+    if (fs.existsSync(bannerPath)) return parseBanner(fs.readFileSync(bannerPath, 'utf8'));
   } catch {
     /* no banner */
   }
@@ -50,7 +77,7 @@ export async function runTui(opts: TuiOptions): Promise<number> {
       agent,
       host,
       version: opts.version ?? '0.1.0',
-      bannerLines: loadBanner(),
+      bannerFrames: loadBanner(),
       mcp: opts.mcp,
     }),
     { exitOnCtrlC: false },
