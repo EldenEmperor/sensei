@@ -26,13 +26,13 @@ function askSensei(prompt) {
     { cwd: tsRoot, encoding: 'utf8', timeout: 600000 },
   );
   if (r.status !== 0) {
-    throw new Error(`sensei-ts exited ${r.status}: ${r.stderr}`);
+    throw new Error(`sensei exited ${r.status}: ${r.stderr}`);
   }
   return JSON.parse(r.stdout);
 }
 
 const questions = [
-  'Read the file ../tests/fixtures/sample-logfmt.log and report the maximum "used" value you see and the timestamp of that line. Be brief.',
+  'Read the file tests/fixtures/sample-logfmt.log and report the maximum "used" value you see and the timestamp of that line. Be brief.',
   'What log level was that line? One word.',
   'Summarize what we established in this conversation in one sentence.',
 ];

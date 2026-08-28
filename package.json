@@ -5,7 +5,7 @@
   "type": "module",
   "description": "Sensei — terminal AI agent for log debugging (TypeScript variant)",
   "bin": {
-    "sensei-ts": "./dist/cli/main.js"
+    "sensei": "./dist/cli/main.js"
   },
   "engines": {
     "node": ">=22"

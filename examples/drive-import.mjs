@@ -27,7 +27,7 @@ const agent = new SenseiAgent({
 });
 
 const questions = [
-  'Read the file ../tests/fixtures/sample-logfmt.log and report the maximum "used" value you see and the timestamp of that line. Be brief.',
+  'Read the file tests/fixtures/sample-logfmt.log and report the maximum "used" value you see and the timestamp of that line. Be brief.',
   'What log level was that line? One word.',
 ];
 

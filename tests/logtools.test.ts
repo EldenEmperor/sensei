@@ -13,7 +13,7 @@ import type { ToolContext } from '../src/tools/registry.js';
 import { FakeChatClient, makeStore, makeTempDir, RecordingHost } from './helpers.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const repoTests = path.resolve(here, '..', '..', 'tests');
+const repoTests = here; // app.log + fixtures live alongside the tests now
 const appLog = path.join(repoTests, 'app.log');
 const fixtures = path.join(repoTests, 'fixtures');
 

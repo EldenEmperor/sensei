@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// sensei-ts CLI — headless-first entry point.
+// sensei CLI — headless-first entry point.
 // Exit codes: 0 success; 1 turn error (API/key/network); 2 usage error.
 
 import path from 'node:path';
@@ -30,7 +30,7 @@ export async function main(argv: string[]): Promise<number> {
     args = parseCliArgs(argv);
   } catch (e) {
     if (e instanceof UsageError) {
-      process.stderr.write(`sensei-ts: ${e.message}\n${USAGE}`);
+      process.stderr.write(`sensei: ${e.message}\n${USAGE}`);
       return 2;
     }
     throw e;
@@ -45,7 +45,7 @@ export async function main(argv: string[]): Promise<number> {
   }
   const interactive = !prompt && process.stdout.isTTY && process.stdin.isTTY;
   if (!prompt && !interactive) {
-    process.stderr.write('sensei-ts: -p <prompt> is required when not attached to a terminal\n');
+    process.stderr.write('sensei: -p <prompt> is required when not attached to a terminal\n');
     return 2;
   }
 
@@ -56,7 +56,7 @@ export async function main(argv: string[]): Promise<number> {
     else store.config.model = args.model;
   }
   if (!args.local && !getApiKey(store.config)) {
-    process.stderr.write('sensei-ts: no OpenAI API key found (set OPENAI_API_KEY, or use --local)\n');
+    process.stderr.write('sensei: no OpenAI API key found (set OPENAI_API_KEY, or use --local)\n');
     return 1;
   }
 
@@ -72,7 +72,7 @@ export async function main(argv: string[]): Promise<number> {
     if (!file) {
       const explicit = args.resume ?? args.continueId;
       if (explicit) {
-        process.stderr.write(`sensei-ts: no saved session found (${explicit})\n`);
+        process.stderr.write(`sensei: no saved session found (${explicit})\n`);
         return 2;
       }
       // bare --continue with nothing to continue: start fresh (and save after)
@@ -180,7 +180,7 @@ export async function main(argv: string[]): Promise<number> {
     };
     process.stdout.write(JSON.stringify(payload) + '\n');
   } else if (error) {
-    process.stderr.write(`sensei-ts: ${error}\n`);
+    process.stderr.write(`sensei: ${error}\n`);
   }
 
   return error ? 1 : 0;
@@ -191,12 +191,12 @@ const isDirect =
   process.argv[1] &&
   (import.meta.url.endsWith(process.argv[1].replace(/\\/g, '/')) ||
     import.meta.url.includes('cli/main') ||
-    process.argv[1].includes('sensei-ts'));
+    process.argv[1].includes('sensei'));
 if (isDirect) {
   main(process.argv.slice(2)).then(
     (code) => process.exit(code),
     (e) => {
-      process.stderr.write(`sensei-ts: ${(e as Error).message}\n`);
+      process.stderr.write(`sensei: ${(e as Error).message}\n`);
       process.exit(1);
     },
   );

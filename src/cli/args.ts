@@ -96,7 +96,7 @@ export function parseCliArgs(argv: string[]): CliArgs {
   };
 }
 
-export const USAGE = `usage: sensei-ts -p "prompt" [options]
+export const USAGE = `usage: sensei -p "prompt" [options]
 
   -p, --print <prompt>      run one prompt non-interactively (required in this build; TUI arrives later)
   --file <path>             attach a file to the prompt (repeatable; big files are pointed at the log tools)

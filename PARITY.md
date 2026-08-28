@@ -1,5 +1,11 @@
 # Parity: PowerShell variant ↔ TypeScript variant
 
+> **Historical document.** The PowerShell variant was retired after the port
+> reached feature-completeness; its final state is preserved at the git tag
+> **`ps-final`** (`git checkout ps-final`). The TypeScript implementation at
+> the repo root is now the only maintained variant. The cross-check harness
+> referenced below lived alongside the PS variant and was retired with it.
+
 Status values: ✅ ported · 🔶 partial · ⬜ pending (milestone) · ➖ intentionally not ported · 🆕 TS-only
 
 ## Tools

@@ -25,7 +25,7 @@ export interface TuiOptions {
 function loadBanner(): string[] {
   try {
     const here = path.dirname(fileURLToPath(import.meta.url));
-    const bannerPath = path.resolve(here, '..', '..', '..', 'assets', 'banner.txt');
+    const bannerPath = path.resolve(here, '..', '..', 'assets', 'banner.txt');
     if (fs.existsSync(bannerPath)) return fs.readFileSync(bannerPath, 'utf8').split(/\r?\n/).filter((l) => l !== '');
   } catch {
     /* no banner */
