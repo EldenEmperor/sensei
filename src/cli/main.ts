@@ -2,6 +2,7 @@
 // sensei CLI — headless-first entry point.
 // Exit codes: 0 success; 1 turn error (API/key/network); 2 usage error.
 
+import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { SenseiAgent } from '../core/agent.js';
@@ -253,12 +254,14 @@ export async function main(argv: string[]): Promise<number> {
   return error ? 1 : 0;
 }
 
-// invoked directly (not imported as a library): argv[1] is this module
+// invoked directly (not imported as a library): argv[1] is this module.
+// Realpaths on both sides — npm's bin shim passes a symlinked argv[1] while
+// Node resolves import.meta.url to the real file (npm link would never match).
 const isDirect = (() => {
   try {
     if (!process.argv[1]) return false;
-    const a = path.resolve(process.argv[1]);
-    const b = fileURLToPath(import.meta.url);
+    const a = fs.realpathSync.native(path.resolve(process.argv[1]));
+    const b = fs.realpathSync.native(fileURLToPath(import.meta.url));
     return process.platform === 'win32' ? a.toLowerCase() === b.toLowerCase() : a === b;
   } catch {
     return false;

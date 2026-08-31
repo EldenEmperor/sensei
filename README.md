@@ -24,6 +24,49 @@ npm test                        # offline test suite, no API key needed
 npm run dev -- --local          # interactive TUI against local Ollama
 ```
 
+### Install as the `sensei` command
+
+```
+npm run build                   # compiles src → dist
+npm link                        # links dist/cli/main.js onto your PATH as `sensei`
+```
+
+Then launch it from any directory — bare `sensei` opens the interactive TUI in that
+directory, `sensei "prompt"` runs headless. After changing the source, `npm run build`
+alone refreshes the linked command (the link points at this repo).
+
+### Quick start with an API key
+
+```powershell
+# Claude models (Anthropic API) — model name alone selects the provider
+$env:ANTHROPIC_API_KEY = "sk-ant-..."          # setx ANTHROPIC_API_KEY "sk-ant-..." to persist
+sensei --model claude-opus-5                   # interactive TUI
+sensei "summarize the errors in @app.log" --model claude-opus-5
+
+# GPT models (OpenAI API) — the default provider
+$env:OPENAI_API_KEY = "sk-..."
+sensei                                          # uses config model (default gpt-5.1)
+
+# bash / zsh
+export ANTHROPIC_API_KEY="sk-ant-..."
+sensei --model claude-opus-5
+```
+
+Persist your choice so plain `sensei` does the right thing: run `/model claude-opus-5`
+once in the TUI (saves to `~/.sensei/config.json`), or set it there directly:
+
+```jsonc
+{ "model": "claude-opus-5" }                   // provider inferred: claude-* → anthropic
+```
+
+For a company token behind a gateway, add a `providers` entry (next section) and set
+the token's env var — e.g. with `"api_key_env": "COMPANY_LLM_TOKEN"`:
+
+```powershell
+$env:COMPANY_LLM_TOKEN = "..."
+sensei --provider company
+```
+
 Runs on Windows, macOS, and Linux (the shell tool is `run_powershell`/pwsh on Windows, `bash` on POSIX; hooks run in pwsh or sh respectively). Requires Node ≥ 22, plus one of:
 
 - `ANTHROPIC_API_KEY` — Claude models (`--model claude-opus-5` auto-selects the Anthropic API)
