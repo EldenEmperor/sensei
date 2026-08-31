@@ -35,6 +35,7 @@ import {
   applySlashCompletion,
   BUILTIN_COMMANDS,
   buildSlashItems,
+  commandHelpLines,
   helpLines,
   slashMenuQuery,
   slashMenuView,
@@ -363,6 +364,36 @@ export function App({ agent, host, version, bannerFrames, sprites, mcp }: AppPro
     const cmd = (sp < 0 ? line : line.slice(0, sp)).toLowerCase();
     const arg = sp < 0 ? '' : line.slice(sp + 1).trim();
     const t = theme;
+
+    // per-command help: /<name> --help (or -h)
+    if (arg === '--help' || arg === '-h') {
+      const name = cmd.replace(/^\//, '');
+      const builtin = BUILTIN_COMMANDS.find((c) => c.name === name);
+      if (builtin) {
+        for (const l of commandHelpLines(builtin)) push(t.dim(l));
+        return;
+      }
+      const custom = findCustomCommand(name, agent.store.cwd, agent.store.configDir);
+      if (custom) {
+        const item = { name: custom.name, hint: custom.argumentHint, desc: custom.description || 'custom command', source: 'custom' as const };
+        const extra = [
+          `custom command from ${custom.path}`,
+          ...(custom.allowedTools.length > 0 ? [`allowed-tools for its turn: ${custom.allowedTools.join(', ')}`] : []),
+          'arguments substitute $ARGUMENTS and $1..$n in the command body',
+        ];
+        for (const l of commandHelpLines(item, extra)) push(t.dim(l));
+        return;
+      }
+      const skill = getSkills(agent.store.cwd, agent.store.configDir).find((s) => s.name.toLowerCase() === name.toLowerCase());
+      if (skill) {
+        const item = { name: skill.name, hint: '[args]', desc: skill.description || 'skill', source: 'skill' as const };
+        for (const l of commandHelpLines(item, [`skill from ${skill.path}`])) push(t.dim(l));
+        return;
+      }
+      push(t.dim(`unknown command ${cmd} — try /help`));
+      return;
+    }
+
     switch (cmd) {
       case '/help': {
         for (const l of helpLines()) push(l);

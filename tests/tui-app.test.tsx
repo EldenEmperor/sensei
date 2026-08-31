@@ -169,6 +169,21 @@ describe('Ink App', () => {
     expect(lastFrame()).not.toContain('reset the conversation');
   });
 
+  it('/permissions --help shows per-command usage', async () => {
+    const { agent, host } = makeTuiAgent(new FakeChatClient());
+    const { lastFrame, stdin } = render(
+      React.createElement(App, { agent, host, version: 'test', bannerFrames: [] }),
+    );
+    await sleep(50);
+    stdin.write('/permissions --help');
+    await sleep(20);
+    stdin.write('\r');
+    await sleep(50);
+    const frame = lastFrame()!;
+    expect(frame).toContain('usage: /permissions');
+    expect(frame).toContain('deny rules beat everything');
+  });
+
   it('/plan <task> plans immediately; [a] approves with auto-accept edits', async () => {
     const fake = new FakeChatClient();
     fake.enqueue({

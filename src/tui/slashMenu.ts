@@ -14,34 +14,115 @@ export interface SlashItem {
   hint: string;
   desc: string;
   source: CommandSource;
+  /** Extra detail lines shown by `/<name> --help` (builtins). */
+  help?: string[];
 }
 
-const b = (name: string, hint: string, desc: string): SlashItem => ({ name, hint, desc, source: 'builtin' });
+const b = (name: string, hint: string, desc: string, help: string[] = []): SlashItem => ({
+  name,
+  hint,
+  desc,
+  source: 'builtin',
+  help,
+});
 
 export const BUILTIN_COMMANDS: SlashItem[] = [
-  b('help', '', 'show this help'),
-  b('clear', '', 'reset the conversation (and todos)'),
-  b('plan', '[task]', 'toggle plan mode, or plan a task right away (read-only until you approve a plan)'),
-  b('style', '[name]', 'response style: default|concise|explanatory|teaching'),
-  b('color', '[name|hex]', 'accent color: indigo|jade|gold|teal|red or #RRGGBB'),
-  b('model', '[name]', 'show or set the model (setting persists to config)'),
-  b('provider', '[name]', 'show or switch the API provider (openai|anthropic|local|custom)'),
-  b('config', '', 'show effective config'),
-  b('permissions', '', 'list allow/deny rules'),
-  b('todos', '', 'show the current checklist'),
-  b('cost', '', 'token usage and estimated cost'),
-  b('mcp', '', 'MCP server status and tools'),
-  b('skills', '', 'list available skills'),
-  b('newskill', '<name> [purpose]', 'have the agent author a new skill'),
-  b('tasks', '', 'list background tasks'),
-  b('compact', '', 'summarize the conversation to reclaim context'),
-  b('memory', '', 'show loaded SENSEI.md memory files'),
-  b('init', '', 'explore this directory and write a SENSEI.md'),
-  b('investigate', '[path]', "deep-map a log file's structure (default: newest .log in cwd)"),
-  b('resume', '[n|id]', 'list recent sessions / continue one'),
-  b('exit', '', 'quit (also /quit, or Ctrl+D)'),
-  b('quit', '', 'quit'),
+  b('help', '', 'show this help', [
+    'Lists every command (built-ins, custom commands, skills) and the key bindings.',
+    'Any command also takes --help (or -h) for its own usage, e.g. /permissions --help.',
+  ]),
+  b('clear', '', 'reset the conversation (and todos)', [
+    'Wipes the transcript and the todo checklist; config, session id, and provider stay.',
+    'The system prompt is regenerated, so SENSEI.md changes are picked up too.',
+  ]),
+  b('plan', '[task]', 'toggle plan mode, or plan a task right away (read-only until you approve a plan)', [
+    '/plan            toggle plan mode on/off (read-only tools while on)',
+    '/plan <task>     enter plan mode and start planning <task> in one step',
+    'When the plan is presented: [y] approve & execute · [a] approve + auto-accept',
+    'file edits for this session · [n]/Esc keep planning.',
+  ]),
+  b('style', '[name]', 'response style: default|concise|explanatory|teaching', [
+    'No argument shows the current style; a name sets it and persists to config.',
+  ]),
+  b('color', '[name|hex]', 'accent color: indigo|jade|gold|teal|red or #RRGGBB', [
+    'Persists to config; takes full effect on restart.',
+  ]),
+  b('model', '[name]', 'show or set the model (setting persists to config)', [
+    'Writes to the active provider\'s model key in ~/.sensei/config.json.',
+    'A claude-* name switches the inferred provider to anthropic (and vice versa).',
+    'Example: /model claude-opus-5',
+  ]),
+  b('provider', '[name]', 'show or switch the API provider (openai|anthropic|local|custom)', [
+    'No argument lists configured providers with wire protocol, endpoint, and key status.',
+    'A name switches and persists. Custom entries live under "providers" in',
+    '~/.sensei/config.json (wire, base_url, api_key_env, headers, model).',
+  ]),
+  b('config', '', 'show effective config', [
+    'Dumps ~/.sensei/config.json merged over defaults; api_key values are masked.',
+    'Project overrides (.sensei.json) add mcpServers, permissions, and hooks.',
+  ]),
+  b('permissions', '', 'list allow/deny rules', [
+    'Shows every allow and deny rule with its source (user config, project, CLI).',
+    'Rule grammar: "tool" or "tool(pattern)" with * ? [abc] wildcards, matched against',
+    'the tool\'s primary argument, e.g. run_powershell(git *) or read_file(C:\\logs\\*).',
+    'allow lives in ~/.sensei/config.json or .sensei.json under permissions.allow;',
+    'deny rules beat everything, including --yolo and read-only tools.',
+  ]),
+  b('todos', '', 'show the current checklist', [
+    'The checklist the agent maintains via todo_write during multi-step work.',
+  ]),
+  b('cost', '', 'token usage and estimated cost', [
+    'Session totals: input/output tokens, cached-prefix reads, and estimated $ based',
+    'on the model price table (override via "prices" in config).',
+  ]),
+  b('mcp', '', 'MCP server status and tools', [
+    'Connection status and tool list per configured server. Configure under',
+    '"mcpServers": stdio {"command","args"} or remote {"url","headers"}.',
+  ]),
+  b('skills', '', 'list available skills', [
+    'Skills load from .sensei/skills/<name>/SKILL.md (project) and ~/.sensei/skills.',
+    'Invoke one directly as /<skillname> [args].',
+  ]),
+  b('newskill', '<name> [purpose]', 'have the agent author a new skill', [
+    'The agent writes .sensei/skills/<name>/SKILL.md for you.',
+    'Example: /newskill triage summarize the top errors in a log file',
+  ]),
+  b('tasks', '', 'list background tasks', [
+    'Tasks started with run_in_background; the agent reads them with task_output.',
+  ]),
+  b('compact', '', 'summarize the conversation to reclaim context', [
+    'Forces the summarizing compaction that otherwise runs automatically at ~80%',
+    'of context_char_budget. Earlier exchanges become one summary message.',
+  ]),
+  b('memory', '', 'show loaded SENSEI.md memory files', [
+    'Memory chain: ~/.sensei/SENSEI.md first, then every SENSEI.md from the drive',
+    'root down to the current directory (nearest last). @file.md lines import.',
+  ]),
+  b('init', '', 'explore this directory and write a SENSEI.md', [
+    'The agent investigates the project and records what future sessions should know.',
+  ]),
+  b('investigate', '[path]', "deep-map a log file's structure (default: newest .log in cwd)", [
+    'Runs log_investigate: format family, timestamp styles, level vocabulary, rare',
+    'events. The resulting format map is cached and teaches the other log tools.',
+  ]),
+  b('resume', '[n|id]', 'list recent sessions / continue one', [
+    '/resume          list recent saved sessions for this directory',
+    '/resume <n|id>   swap the conversation to that session',
+    'Sessions live in ~/.sensei/sessions; --continue does the same from the CLI.',
+  ]),
+  b('exit', '', 'quit (also /quit, or Ctrl+D)', ['Saves the session first when save_sessions is on.']),
+  b('quit', '', 'quit', ['Same as /exit.']),
 ];
+
+/** The `/name --help` output for any menu item. Builtins carry curated help;
+ *  custom commands and skills get generated detail from `extra`. */
+export function commandHelpLines(item: SlashItem, extra: string[] = []): string[] {
+  const usage = `usage: /${item.name}${item.hint ? ' ' + item.hint : ''}`;
+  const lines = [usage, `  ${item.desc}`];
+  for (const l of item.help ?? []) lines.push(`  ${l}`);
+  for (const l of extra) lines.push(`  ${l}`);
+  return lines;
+}
 
 /** The /help body, derived from BUILTIN_COMMANDS plus the footer notes. */
 export function helpLines(): string[] {
@@ -51,6 +132,7 @@ export function helpLines(): string[] {
   // '/plan' must keep the phrase 'toggle plan mode' (asserted by tui-app tests)
   return [
     ...lines,
+    '  /<command> --help   usage details for one command (works for custom commands and skills too)',
     '  custom commands: .sensei\\commands\\<name>.md ($ARGUMENTS and $1..$n substituted)',
     '  keys: !cmd runs in the shell directly · @path Tab-completes files · \\ then Enter = new line',
     '        typing while busy queues the message · Ctrl+O verbose tool output · Ctrl+A/E/W/U edit',

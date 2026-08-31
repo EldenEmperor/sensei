@@ -7,6 +7,7 @@ import {
   applySlashCompletion,
   BUILTIN_COMMANDS,
   buildSlashItems,
+  commandHelpLines,
   helpLines,
   slashMenuQuery,
   slashMenuView,
@@ -102,5 +103,31 @@ describe('helpLines', () => {
     expect(joined).toContain('/clear');
     expect(joined).toContain('toggle plan mode');
     expect(joined).toContain('custom commands');
+    expect(joined).toContain('--help');
+  });
+});
+
+describe('commandHelpLines', () => {
+  it('every builtin carries curated help', () => {
+    for (const c of BUILTIN_COMMANDS) {
+      expect(c.help, `/${c.name} has no help lines`).toBeDefined();
+      expect(c.help!.length, `/${c.name} has empty help`).toBeGreaterThan(0);
+    }
+  });
+
+  it('formats usage + description + detail (+ extra)', () => {
+    const perms = BUILTIN_COMMANDS.find((c) => c.name === 'permissions')!;
+    const lines = commandHelpLines(perms);
+    expect(lines[0]).toBe('usage: /permissions');
+    expect(lines[1]).toContain('allow/deny rules');
+    expect(lines.join('\n')).toContain('deny rules beat everything');
+    const plan = BUILTIN_COMMANDS.find((c) => c.name === 'plan')!;
+    expect(commandHelpLines(plan)[0]).toBe('usage: /plan [task]');
+    const custom = commandHelpLines(
+      { name: 'triage', hint: '<file>', desc: 'triage a log', source: 'custom' },
+      ['custom command from x.md'],
+    );
+    expect(custom[0]).toBe('usage: /triage <file>');
+    expect(custom.at(-1)).toContain('x.md');
   });
 });

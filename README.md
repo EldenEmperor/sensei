@@ -120,7 +120,9 @@ npm run dev -- [--provider <name>] [--local] [--model <name>] [--yolo] [--plan] 
 
 Streaming markdown answers, live tool-call lines, todo checklist, y/n/a/p permission prompts with diff previews, plan mode; Esc/Ctrl+C aborts the in-flight turn, Ctrl+D exits (saving the session). The composer has full cursor editing (←/→, Ctrl+A/E home/end, Ctrl+W/U word/line delete, Alt+←/→ words), multiline input (`\` then Enter), paste handling, history (↑/↓), Tab completion for /commands and `@file` paths, `!cmd` to run a shell command directly, Ctrl+O to toggle verbose tool output — and typing while sensei is busy queues the message for the next turn. Typing `/` opens a live command menu (built-ins, custom commands, and skills with their
 descriptions) — type to filter, ↑/↓ to select, Tab to complete, Enter to run, Esc to
-dismiss. `/help` lists everything: `/clear /compact /plan /style /color /model /provider
+dismiss. Every command also takes `--help` (or `-h`) for its own usage — e.g.
+`/permissions --help` explains the rule grammar; it works for custom commands and skills
+too. `/help` lists everything: `/clear /compact /plan /style /color /model /provider
 /config /mcp /permissions /skills /newskill /tasks /todos /cost /memory /init
 /investigate /resume /exit` — plus custom commands and direct skill invocation as
 `/<skillname>`.
