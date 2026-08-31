@@ -373,8 +373,10 @@ export function App({ agent, host, version, bannerFrames, sprites, mcp }: AppPro
       }
       case '/permissions': {
         const rules = agent.store.getAllowRules();
-        if (rules.length === 0) push(t.dim('no allowlist rules'));
-        for (const r of rules) push(t.dim(`  ${r.rule}  (${r.source})`));
+        const deny = agent.store.getDenyRules();
+        if (rules.length === 0 && deny.length === 0) push(t.dim('no allow/deny rules'));
+        for (const r of rules) push(t.dim(`  allow ${r.rule}  (${r.source})`));
+        for (const r of deny) push(t.dim(`  deny  ${r.rule}  (${r.source})`));
         break;
       }
       case '/todos': {

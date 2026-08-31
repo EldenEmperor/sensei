@@ -122,6 +122,19 @@ export class ConfigStore {
     return rules;
   }
 
+  /** permissions.deny — same rule grammar; checked first and beats everything
+   *  (yolo included), even on read-only tools. */
+  getDenyRules(): AllowRule[] {
+    const rules: AllowRule[] = [];
+    const userDeny = (this.config.permissions as { deny?: unknown } | undefined)?.deny;
+    if (Array.isArray(userDeny)) for (const r of userDeny) rules.push({ rule: String(r), source: 'user' });
+    const proj = this.projectConfig as { permissions?: { deny?: unknown } };
+    if (Array.isArray(proj.permissions?.deny)) {
+      for (const r of proj.permissions.deny) rules.push({ rule: String(r), source: 'project' });
+    }
+    return rules;
+  }
+
   addProjectAllowRule(rule: string): void {
     const projPath = path.join(this.cwd, '.sensei.json');
     let proj: Record<string, unknown> = {};

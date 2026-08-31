@@ -59,6 +59,20 @@ export async function main(argv: string[]): Promise<number> {
 
   const store = new ConfigStore();
   store.load((t) => process.stderr.write(t + '\n'));
+
+  // effective permission mode: --permission-mode → --yolo/--plan aliases →
+  // config permissions.defaultMode → default
+  let mode = args.permissionMode;
+  if (!mode && args.yolo) mode = 'yolo';
+  if (!mode && args.plan) mode = 'plan';
+  if (!mode) {
+    const dm = String((store.config.permissions as { defaultMode?: unknown } | undefined)?.defaultMode ?? '');
+    if (dm === 'default' || dm === 'acceptEdits' || dm === 'plan' || dm === 'yolo') mode = dm;
+  }
+  const yolo = args.yolo || mode === 'yolo';
+  const planMode = args.plan || mode === 'plan';
+  const acceptEdits = mode === 'acceptEdits';
+
   if (args.model) {
     // written before provider resolution so model-name inference sees it
     if (args.local) store.config.local_model = args.model;
@@ -133,8 +147,8 @@ export async function main(argv: string[]): Promise<number> {
         store,
         local: args.local,
         provider: providerName,
-        planMode: args.plan,
-        policy: args.yolo ? { mode: 'yolo' } : { mode: 'interactive' },
+        planMode,
+        policy: yolo ? { mode: 'yolo' } : { mode: 'interactive', acceptEdits },
         sessionId: sessionId ?? undefined,
         restoredMessages,
         version: '0.1.0',
@@ -146,9 +160,9 @@ export async function main(argv: string[]): Promise<number> {
     }
   }
 
-  const policy: PermissionPolicy = args.yolo
+  const policy: PermissionPolicy = yolo
     ? { mode: 'yolo' }
-    : { mode: 'allowlist', extraRules: args.allow };
+    : { mode: 'allowlist', extraRules: args.allow, acceptEdits };
 
   const host = new HeadlessHost(args.outputFormat);
   const agent = new SenseiAgent({
@@ -157,7 +171,7 @@ export async function main(argv: string[]): Promise<number> {
     permissionPolicy: policy,
     local: args.local,
     provider: providerName ?? undefined,
-    planMode: args.plan,
+    planMode,
     maxRounds: args.maxRounds ?? undefined,
     sessionId: sessionId ?? undefined,
     restoredMessages,
@@ -172,6 +186,7 @@ export async function main(argv: string[]): Promise<number> {
     error = (e as Error).message;
     result = null;
   } finally {
+    await agent.endSession().catch(() => {});
     stopAllBackgroundTasks();
     await mcp?.stopAll();
   }

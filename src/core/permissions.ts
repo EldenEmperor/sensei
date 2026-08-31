@@ -112,3 +112,29 @@ export function matchesAllowlist(
   const { primary, resolved } = getPrimaryArg(primaryArg, args, cwd);
   return rules.some((r) => testAllowRule(r.rule, name, primary, resolved, process.platform));
 }
+
+// --- acceptEdits mode --------------------------------------------------------
+
+/** Tools acceptEdits auto-allows — file edits only, never shell/web. */
+export const EDIT_TOOLS = ['write_file', 'edit_file', 'multi_edit'];
+
+export function isPathInside(child: string, parent: string, platform: NodeJS.Platform = process.platform): boolean {
+  // the platform's own path rules, not the host's (testable cross-platform)
+  const P = platform === 'win32' ? path.win32 : path.posix;
+  const fold = (s: string) => (platform === 'win32' ? s.toLowerCase() : s);
+  const rel = P.relative(fold(parent), fold(child));
+  return rel === '' || (!rel.startsWith('..') && !P.isAbsolute(rel));
+}
+
+/** acceptEdits: auto-allow file-edit tools whose resolved target is inside cwd. */
+export function acceptEditsAllows(
+  name: string,
+  primaryArg: string | undefined,
+  args: Record<string, unknown>,
+  cwd: string,
+  platform: NodeJS.Platform = process.platform,
+): boolean {
+  if (!EDIT_TOOLS.includes(name)) return false;
+  const { resolved } = getPrimaryArg(primaryArg, args, cwd);
+  return resolved ? isPathInside(resolved, cwd, platform) : false;
+}

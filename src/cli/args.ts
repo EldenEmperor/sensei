@@ -12,6 +12,7 @@ export interface CliArgs {
   sessionId: string | null;
   resume: string | null;
   yolo: boolean;
+  permissionMode: 'default' | 'acceptEdits' | 'plan' | 'yolo' | null;
   allow: string[];
   local: boolean;
   provider: string | null;
@@ -54,6 +55,7 @@ export function parseCliArgs(argv: string[]): CliArgs {
         'session-id': { type: 'string' },
         resume: { type: 'string' },
         yolo: { type: 'boolean' },
+        'permission-mode': { type: 'string' },
         allow: { type: 'string', multiple: true },
         local: { type: 'boolean' },
         provider: { type: 'string' },
@@ -73,6 +75,10 @@ export function parseCliArgs(argv: string[]): CliArgs {
   if (!['text', 'json', 'stream-json'].includes(format)) {
     throw new UsageError(`unknown --output-format '${format}' (text|json|stream-json)`);
   }
+  const pm = (v['permission-mode'] as string | undefined) ?? null;
+  if (pm !== null && !['default', 'acceptEdits', 'plan', 'yolo'].includes(pm)) {
+    throw new UsageError(`unknown --permission-mode '${pm}' (default|acceptEdits|plan|yolo)`);
+  }
   let maxRounds: number | null = null;
   if (v['max-rounds'] !== undefined) {
     maxRounds = Number(v['max-rounds']);
@@ -88,6 +94,7 @@ export function parseCliArgs(argv: string[]): CliArgs {
     sessionId: (v['session-id'] as string | undefined) ?? null,
     resume: (v.resume as string | undefined) ?? null,
     yolo: Boolean(v.yolo),
+    permissionMode: pm as CliArgs['permissionMode'],
     allow: (v.allow as string[] | undefined) ?? [],
     local: Boolean(v.local),
     provider: (v.provider as string | undefined) ?? null,
@@ -107,7 +114,9 @@ export const USAGE = `usage: sensei -p "prompt" [options]
   --continue [id]           continue a saved session — latest for this directory, or the given id
   --session-id <id>         use/create a session with this exact id (saved after the turn)
   --resume <id>             load this saved session (id or file path) without adopting its id
-  --yolo                    skip all tool permission checks
+  --yolo                    skip all tool permission checks (alias for --permission-mode yolo)
+  --permission-mode <m>     default | acceptEdits (auto-allow file edits in cwd) | plan | yolo
+                            (no flag: config "permissions": {"defaultMode": ...} applies)
   --allow "tool(pattern)"   add an allowlist rule for this run (repeatable)
   --local                   use the local Ollama endpoint (alias for --provider local)
   --provider <name>         endpoint to use: openai | anthropic | local | a "providers" entry from config

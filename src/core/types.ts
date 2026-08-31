@@ -94,7 +94,7 @@ export interface SenseiConfig {
   context_char_budget: number;
   mcp_call_timeout: number;
   mcpServers: Record<string, unknown>;
-  permissions: { allow: string[] };
+  permissions: { allow: string[]; deny?: string[]; defaultMode?: string };
   hooks: unknown[];
   prices: Record<string, [number, number]>;
   output_style: string;
@@ -120,8 +120,10 @@ export type PermissionDecision =
 
 export type PermissionPolicy =
   | { mode: 'yolo' }
-  | { mode: 'allowlist'; extraRules?: string[] }
-  | { mode: 'interactive' };
+  | { mode: 'allowlist'; extraRules?: string[]; acceptEdits?: boolean }
+  | { mode: 'interactive'; acceptEdits?: boolean };
+
+export type PermissionModeName = 'default' | 'acceptEdits' | 'plan' | 'yolo';
 
 export interface TurnResult {
   finalText: string | null;

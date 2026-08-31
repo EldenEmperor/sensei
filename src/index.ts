@@ -27,6 +27,8 @@ export {
 } from './core/sessions.js';
 export { isPassiveReply, getSystemPrompt, AUTO_CONTINUE_NOTE } from './core/prompts.js';
 export {
+  acceptEditsAllows,
+  isPathInside,
   likeMatch,
   likePatternToRegex,
   persistRuleFor,

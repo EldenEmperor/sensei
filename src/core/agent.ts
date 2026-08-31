@@ -9,6 +9,7 @@ import { ConfigStore, costLine, getActiveModel } from './config.js';
 import { resolveProvider, type ProviderOverrides, type ResolvedProvider } from './providers.js';
 import type { AgentEvent, AgentHost } from './events.js';
 import {
+  acceptEditsAllows,
   getPrimaryArg,
   matchesAllowlist,
   persistRuleFor,
@@ -79,6 +80,8 @@ export class SenseiAgent {
   private readonly _sessionId: string;
   private permissionDenials: { tool: string; primary?: string }[] = [];
   private currentSignal?: AbortSignal;
+  private sessionStarted = false;
+  private sessionEnded = false;
 
   constructor(opts: AgentOptions) {
     this.store = opts.configStore;
@@ -187,6 +190,12 @@ export class SenseiAgent {
 
   async ask(prompt: string, opts: { signal?: AbortSignal; files?: string[] } = {}): Promise<TurnResult> {
     registerSkillTool(this.registry, this.store.cwd, this.store.configDir); // cheap rescan: picks up skills created mid-session
+    const hookContext: string[] = [];
+    if (!this.sessionStarted) {
+      this.sessionStarted = true;
+      const start = await runHooks('SessionStart', this.hooks(), this.hookCtx(), { trigger: 'startup' });
+      hookContext.push(...start.context);
+    }
     const hook = await runHooks('UserPromptSubmit', this.hooks(), this.hookCtx(), { prompt });
     if (hook.block) {
       this.note(`✗ prompt blocked by hook: ${hook.reason}`);
@@ -194,8 +203,10 @@ export class SenseiAgent {
       this.emit({ type: 'turn-end', finalText: null, finishReason: 'blocked', aborted: false, rounds: 0 });
       return blocked;
     }
+    hookContext.push(...hook.context);
     let text = prompt;
     for (const f of opts.files ?? []) text += `\n@${f}`;
+    for (const c of hookContext) text += `\n<system-note>${c}</system-note>`;
     const expanded = this.expandFileReferences(text);
     this.messages.push({ role: 'user', content: expanded });
     addBackgroundTaskNotices(this.messages);
@@ -360,6 +371,15 @@ export class SenseiAgent {
     const tool = this.registry.get(name);
     if (!tool) return `ERROR: unknown tool '${name}'`;
 
+    // deny rules beat everything — yolo, session allows, read-only status
+    const denyRules = this.store.getDenyRules();
+    if (denyRules.length > 0 && matchesAllowlist(denyRules, name, tool.primaryArg, args, this.store.cwd)) {
+      const { primary, resolved } = getPrimaryArg(tool.primaryArg, args, this.store.cwd);
+      this.permissionDenials.push({ tool: name, primary: resolved ?? primary });
+      this.note(`  denied by permissions.deny (${name})`);
+      return `ERROR: '${name}' is blocked by a permissions.deny rule — do not retry it`;
+    }
+
     const pre = await runHooks('PreToolUse', this.hooks(), this.hookCtx(), { toolName: name, toolInput: args });
     if (pre.block) return `ERROR: blocked by PreToolUse hook: ${pre.reason}`;
 
@@ -407,6 +427,10 @@ export class SenseiAgent {
       for (const r of this.policy.extraRules) rules.push({ rule: r, source: 'cli' });
     }
     if (matchesAllowlist(rules, name, primaryArg, args, this.store.cwd)) return true;
+    // acceptEdits: file edits inside cwd skip the prompt; shell/web still ask
+    if (this.policy.acceptEdits && acceptEditsAllows(name, primaryArg, args, this.store.cwd)) {
+      return true;
+    }
 
     const { primary, resolved } = getPrimaryArg(primaryArg, args, this.store.cwd);
     if (this.policy.mode !== 'interactive' || nonInteractive) {
@@ -458,7 +482,15 @@ export class SenseiAgent {
       excludeTools: opts.excludeTools,
       nonInteractive: opts.nonInteractive,
     });
+    await runHooks('SubagentStop', this.hooks(), this.hookCtx(), { lastMessage: r.finalText ?? '' });
     return { finalText: r.finalText, aborted: r.aborted, rounds: r.rounds };
+  }
+
+  /** Fire the SessionEnd hook once; hosts call this on exit. */
+  async endSession(): Promise<void> {
+    if (this.sessionEnded || !this.sessionStarted) return;
+    this.sessionEnded = true;
+    await runHooks('SessionEnd', this.hooks(), this.hookCtx(), {});
   }
 
   private registerSubagentTools(): void {
@@ -603,6 +635,7 @@ export class SenseiAgent {
     const budget = Number(this.store.config.context_char_budget);
     if (!force && transcriptCharCount(messages) <= 0.8 * budget) return;
     if (messages.length < 4) return;
+    await runHooks('PreCompact', this.hooks(), this.hookCtx(), { trigger: force ? 'manual' : 'auto' });
 
     let cut = -1;
     if (force) {

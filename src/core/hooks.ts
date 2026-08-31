@@ -1,10 +1,14 @@
 // User-configured shell hooks around agent events, ported from src\hooks.ps1.
-// Config: "hooks": [ { "event": "PreToolUse|PostToolUse|UserPromptSubmit|Stop",
-//                      "matcher": "run_powershell", "command": "..." } ]
+// Config: "hooks": [ { "event": "<name>", "matcher": "run_powershell", "command": "..." } ]
+// Events: PreToolUse, PostToolUse, UserPromptSubmit, Stop, SessionStart,
+// SessionEnd, PreCompact, SubagentStop.
 // The hook command runs in the platform shell (pwsh on Windows, sh on POSIX)
-// with a JSON event payload on stdin.
-// Exit 0 = continue (stdout shown dim). Exit 2 on PreToolUse/UserPromptSubmit =
-// block (stderr becomes the reason). Anything else = warn and continue.
+// with a JSON event payload on stdin. Two output protocols:
+//  - exit codes: 0 = continue (stdout shown dim); 2 on PreToolUse/
+//    UserPromptSubmit = block (stderr becomes the reason); else warn.
+//  - JSON stdout (exit 0): {"decision":"block","reason":"...",
+//    "additionalContext":"...","systemMessage":"..."} — additionalContext is
+//    injected into the conversation, systemMessage is shown to the user.
 
 import { spawn } from 'node:child_process';
 import { getShell } from '../tools/platformShell.js';
@@ -28,11 +32,40 @@ export interface HookEventArgs {
   toolResponse?: string;
   prompt?: string;
   lastMessage?: string;
+  /** PreCompact: 'auto' | 'manual'; SessionStart: 'startup'. */
+  trigger?: string;
 }
 
 export interface HookResult {
   block: boolean;
   reason: string;
+  /** additionalContext strings from the JSON stdout protocol — the caller
+   *  injects them into the conversation (system-note). */
+  context: string[];
+}
+
+/** Events where a hook may block (exit 2 or JSON decision:"block"). */
+const BLOCKABLE = new Set(['PreToolUse', 'UserPromptSubmit']);
+
+interface HookJsonOutput {
+  decision?: string;
+  reason?: string;
+  additionalContext?: string;
+  systemMessage?: string;
+}
+
+/** JSON stdout protocol: a hook may print {"decision":"block","reason":...,
+ *  "additionalContext":...,"systemMessage":...} instead of using exit codes.
+ *  Non-JSON stdout falls back to the plain-text note behavior. */
+function tryParseHookJson(out: string): HookJsonOutput | null {
+  const t = out.trim();
+  if (!t.startsWith('{')) return null;
+  try {
+    const parsed = JSON.parse(t) as HookJsonOutput | null;
+    return parsed && typeof parsed === 'object' ? parsed : null;
+  } catch {
+    return null;
+  }
 }
 
 function runOne(command: string, json: string, cwd: string): Promise<{ code: number; out: string; err: string; timedOut: boolean }> {
@@ -79,7 +112,7 @@ export async function runHooks(
   ctx: HookContext,
   args: HookEventArgs = {},
 ): Promise<HookResult> {
-  const result: HookResult = { block: false, reason: '' };
+  const result: HookResult = { block: false, reason: '', context: [] };
   const matching = hooks.filter((h) => String(h.event) === event);
   if (matching.length === 0) return result;
 
@@ -99,6 +132,7 @@ export async function runHooks(
     if (args.toolResponse !== undefined) payload.tool_response = args.toolResponse;
     if (args.prompt !== undefined) payload.prompt = args.prompt;
     if (args.lastMessage !== undefined) payload.last_message = args.lastMessage;
+    if (args.trigger !== undefined) payload.trigger = args.trigger;
     const json = JSON.stringify(payload);
 
     try {
@@ -108,8 +142,19 @@ export async function runHooks(
         continue;
       }
       if (r.code === 0) {
-        if (r.out.trim()) ctx.note(`hook: ${r.out.trim()}`);
-      } else if (r.code === 2 && (event === 'PreToolUse' || event === 'UserPromptSubmit')) {
+        const parsed = tryParseHookJson(r.out);
+        if (parsed) {
+          if (parsed.systemMessage) ctx.note(`hook: ${parsed.systemMessage}`);
+          if (parsed.additionalContext) result.context.push(String(parsed.additionalContext));
+          if (parsed.decision === 'block' && BLOCKABLE.has(event)) {
+            result.block = true;
+            result.reason = parsed.reason?.trim() || `blocked by hook: ${h.command}`;
+            return result;
+          }
+        } else if (r.out.trim()) {
+          ctx.note(`hook: ${r.out.trim()}`);
+        }
+      } else if (r.code === 2 && BLOCKABLE.has(event)) {
         result.block = true;
         result.reason = r.err.trim() || `blocked by hook: ${h.command}`;
         return result;

@@ -123,9 +123,14 @@ export class McpManager {
         if (!schema || schema.type !== 'object') schema = { type: 'object', properties: {} };
         const serverName = s.name;
         const toolName = tool.name;
+        // first string-typed property = primaryArg, so allow/deny rules can
+        // match on the argument (e.g. "mcp__github__get_issue(123)")
+        const props = (schema.properties ?? {}) as Record<string, { type?: unknown } | undefined>;
+        const primaryArg = Object.keys(props).find((k) => props[k]?.type === 'string');
         registry.register({
           name: safe,
           readOnly: false,
+          primaryArg,
           description: String(tool.description ?? ''),
           parameters: schema,
           handler: async (a) => this.call(serverName, toolName, a),

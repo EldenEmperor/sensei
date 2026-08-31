@@ -130,5 +130,6 @@ export async function runTui(opts: TuiOptions): Promise<number> {
     { exitOnCtrlC: false },
   );
   await instance.waitUntilExit();
+  await agent.endSession().catch(() => {});
   return 0;
 }
