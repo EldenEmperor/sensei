@@ -12,6 +12,7 @@
   },
   "scripts": {
     "setup": "node scripts/setup.mjs",
+    "pretest": "node scripts/make-test-log.mjs --if-missing",
     "dev": "tsx src/cli/main.ts",
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",

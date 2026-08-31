@@ -16,7 +16,7 @@ const host = {
     if (e.type === 'note') console.log(`  [note] ${e.text}`);
   },
   requestPermission: async () => ({ allow: false, reason: 'non-interactive' }),
-  requestPlanApproval: async () => false,
+  requestPlanApproval: async () => ({ approved: false }),
 };
 
 const agent = new SenseiAgent({

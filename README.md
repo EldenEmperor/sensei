@@ -144,7 +144,8 @@ git log --oneline -20 | sensei "what shipped this week?"   # or pipe the prompt/
 
 - `--output-format json` — one machine-readable object on stdout (`session_id`, `result`, `usage`, `permission_denials`, `error`); progress on stderr. `stream-json` emits NDJSON agent events.
 - `--continue [id]` — continue a saved conversation across invocations (bare `--continue` picks the latest session for this directory, or starts one).
-- `--yolo` / `--allow "tool(pattern)"` — headless permission policy; without either, write/execute tools fail closed.
+- `--yolo` / `--allow "tool(pattern)"` / `--permission-mode acceptEdits` — headless permission policy; without any, write/execute tools fail closed.
+- `sensei -h` lists every flag (`--provider`, `--model`, `--append-system-prompt`, `--add-dir`, `--max-rounds`, …).
 - `--investigate <path>` — deep-map a log's structure via the built-in prompt.
 
 Exit codes: 0 success · 1 turn error · 2 usage error.
@@ -158,7 +159,7 @@ const store = new ConfigStore();
 store.load();
 const agent = new SenseiAgent({
   configStore: store,
-  host: { onEvent: console.log, requestPermission: async () => ({ allow: false, reason: 'non-interactive' }), requestPlanApproval: async () => false },
+  host: { onEvent: console.log, requestPermission: async () => ({ allow: false, reason: 'non-interactive' }), requestPlanApproval: async () => ({ approved: false }) },
   permissionPolicy: { mode: 'yolo' },
   local: true,
 });
@@ -183,7 +184,7 @@ See `examples/drive-spawn.mjs` (child-process driver with `--continue`) and `exa
 
 ## Architecture
 
-`src/core` + `src/tools` + `src/logtools` are UI-free — every interaction is an `AgentEvent` or an awaitable `AgentHost` callback, so the headless CLI and the Ink TUI are thin hosts over one engine. The LLM sits behind a `ChatClient` interface (`openai` package, baseURL-switchable for Ollama); tests substitute a FIFO fake.
+`src/core` + `src/tools` + `src/logtools` are UI-free — every interaction is an `AgentEvent` or an awaitable `AgentHost` callback, so the headless CLI and the Ink TUI are thin hosts over one engine. The LLM sits behind a `ChatClient` interface with two wire implementations — the `openai` package (also OpenAI-compatible gateways and Ollama via base URL) and `@anthropic-ai/sdk` (Claude direct or Anthropic-wire gateways), chosen by the resolved provider's `wire`; the Anthropic client translates sensei's OpenAI-normalized transcript at the wire, so the engine and sessions never see provider-specific shapes. Tests substitute a FIFO fake at the same seam, plus wire-level suites with an injected `fetch`.
 
 ## Config
 
@@ -200,5 +201,11 @@ Sessions live in `~/.sensei/sessions/` as versioned envelopes; `--continue`/`--r
 ## Tests
 
 ```
-npm test        # vitest, fully offline — engine, tools, log analysis, TUI components, MCP vs a mock server
+npm test        # vitest, fully offline — engine, tools, providers (wire-level), log analysis,
+                # TUI components, MCP vs a mock server
 ```
+
+No API key or network needed. The 200k-line `tests/app.log` fixture (14 MB) is not
+committed — `npm test` generates it automatically on first run via
+`scripts/make-test-log.mjs` (deterministic, with a ground-truth `answers.json` sidecar
+the log-tool tests assert against).
