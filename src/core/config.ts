@@ -218,7 +218,11 @@ function readMemoryFile(p: string, depth = 0): string {
 }
 
 /** Global SENSEI.md first, then every SENSEI.md from the drive root down to cwd (nearest last). */
-export function getMemory(configDir: string, cwd: string): { path: string; content: string }[] {
+export function getMemory(
+  configDir: string,
+  cwd: string,
+  platform: NodeJS.Platform = process.platform,
+): { path: string; content: string }[] {
   const candidates: string[] = [path.join(configDir, 'SENSEI.md')];
   const chain: string[] = [];
   let dir = cwd;
@@ -233,7 +237,8 @@ export function getMemory(configDir: string, cwd: string): { path: string; conte
   const seen = new Set<string>();
   const out: { path: string; content: string }[] = [];
   for (const p of candidates) {
-    const key = p.toLowerCase();
+    // case-fold dedup only where the filesystem is case-insensitive
+    const key = platform === 'win32' ? p.toLowerCase() : p;
     if (seen.has(key)) continue;
     seen.add(key);
     if (fs.existsSync(p) && fs.statSync(p).isFile()) {

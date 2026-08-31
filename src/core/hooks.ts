@@ -1,11 +1,13 @@
 // User-configured shell hooks around agent events, ported from src\hooks.ps1.
 // Config: "hooks": [ { "event": "PreToolUse|PostToolUse|UserPromptSubmit|Stop",
 //                      "matcher": "run_powershell", "command": "..." } ]
-// The hook command runs in pwsh with a JSON event payload on stdin.
+// The hook command runs in the platform shell (pwsh on Windows, sh on POSIX)
+// with a JSON event payload on stdin.
 // Exit 0 = continue (stdout shown dim). Exit 2 on PreToolUse/UserPromptSubmit =
 // block (stderr becomes the reason). Anything else = warn and continue.
 
 import { spawn } from 'node:child_process';
+import { getShell } from '../tools/platformShell.js';
 import { likeMatch } from './permissions.js';
 
 export interface HookConfig {
@@ -35,7 +37,8 @@ export interface HookResult {
 
 function runOne(command: string, json: string, cwd: string): Promise<{ code: number; out: string; err: string; timedOut: boolean }> {
   return new Promise((resolve) => {
-    const p = spawn('pwsh', ['-NoProfile', '-NonInteractive', '-Command', command], { cwd, windowsHide: true });
+    const hook = getShell().hookSpawn(command);
+    const p = spawn(hook.exe, hook.args, { cwd, windowsHide: true });
     let out = '';
     let err = '';
     let settled = false;

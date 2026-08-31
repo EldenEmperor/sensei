@@ -1,7 +1,9 @@
-// run_powershell — spawns a fresh non-interactive pwsh child, same semantics
-// and result format as the PS variant. Background tasks arrive in M4.
+// The shell tool — `run_powershell` (pwsh) on Windows, `bash` on POSIX —
+// spawns a fresh non-interactive child, same semantics and result format
+// either way. One tool per platform; see platformShell.ts.
 
 import { spawn } from 'node:child_process';
+import { getShell, type ShellSpec } from './platformShell.js';
 import type { ToolRegistry } from './registry.js';
 
 function killTree(pid: number): void {
@@ -24,14 +26,15 @@ function killTree(pid: number): void {
   }
 }
 
-export function runPowershell(
+export function runShellCommand(
   command: string,
   cwd: string,
   timeoutSeconds: number,
+  shell: ShellSpec = getShell(),
 ): Promise<string> {
   const timeoutMs = 1000 * Math.min(600, Math.max(1, timeoutSeconds));
   return new Promise((resolve) => {
-    const p = spawn('pwsh', ['-NoProfile', '-NonInteractive', '-Command', command], {
+    const p = spawn(shell.exe, shell.fgArgs(command), {
       cwd,
       windowsHide: true,
     });
@@ -54,7 +57,7 @@ export function runPowershell(
       if (settled) return;
       settled = true;
       clearTimeout(timer);
-      resolve(`ERROR: could not start pwsh: ${e.message}`);
+      resolve(`ERROR: could not start ${shell.displayName}: ${e.message}`);
     });
     p.on('close', (code) => {
       if (settled) return;
@@ -68,13 +71,18 @@ export function runPowershell(
   });
 }
 
-export function registerShellTools(registry: ToolRegistry): void {
+/** Back-compat alias (the PS-era name). */
+export const runPowershell = runShellCommand;
+
+export function registerShellTools(registry: ToolRegistry, shell: ShellSpec = getShell()): void {
   registry.register({
-    name: 'run_powershell',
+    name: shell.toolName,
     readOnly: false,
     primaryArg: 'command',
     description:
-      'Run a command in a fresh non-interactive pwsh child process and return exit code, stdout, and stderr. State does not persist between calls. Default timeout 120s. Set run_in_background=true for long-running commands: returns a task id immediately; check it later with task_output.',
+      `Run a command in a fresh non-interactive ${shell.displayName} child process and return exit code, stdout, and stderr. ` +
+      'State does not persist between calls. Default timeout 120s. Set run_in_background=true for long-running commands: ' +
+      'returns a task id immediately; check it later with task_output.',
     parameters: {
       type: 'object',
       properties: {
@@ -87,9 +95,9 @@ export function registerShellTools(registry: ToolRegistry): void {
     handler: async (a, ctx) => {
       if (a.run_in_background) {
         const { startBackgroundTask } = await import('./tasks.js');
-        return startBackgroundTask(String(a.command), ctx.cwd, ctx.configDir);
+        return startBackgroundTask(String(a.command), ctx.cwd, ctx.configDir, shell);
       }
-      return runPowershell(String(a.command), ctx.cwd, Number(a.timeout_seconds ?? 120));
+      return runShellCommand(String(a.command), ctx.cwd, Number(a.timeout_seconds ?? 120), shell);
     },
   });
 }

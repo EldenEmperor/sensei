@@ -4,8 +4,9 @@
 import path from 'node:path';
 import type { AllowRule } from './config.js';
 
-/** Compile a PowerShell -like pattern to a RegExp (case-insensitive full match). */
-export function likePatternToRegex(pattern: string): RegExp {
+/** Compile a PowerShell -like pattern to a RegExp (full match; case-insensitive
+ *  unless caseSensitive — POSIX paths match case-sensitively). */
+export function likePatternToRegex(pattern: string, caseSensitive = false): RegExp {
   let rx = '';
   for (let i = 0; i < pattern.length; i++) {
     const c = pattern[i];
@@ -28,20 +29,23 @@ export function likePatternToRegex(pattern: string): RegExp {
       rx += c.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     }
   }
-  return new RegExp(`^${rx}$`, 'is');
+  return new RegExp(`^${rx}$`, caseSensitive ? 's' : 'is');
 }
 
-export function likeMatch(value: string, pattern: string): boolean {
-  return likePatternToRegex(pattern).test(value);
+export function likeMatch(value: string, pattern: string, caseSensitive = false): boolean {
+  return likePatternToRegex(pattern, caseSensitive).test(value);
 }
 
 /** Rule grammar: "tool" or "tool(pattern)". Pattern is tested against the
- *  tool's primary argument, raw and resolved. */
+ *  tool's primary argument, raw and resolved. Tool names always match
+ *  case-insensitively; on POSIX the resolved-path comparison is
+ *  case-sensitive (the filesystem is). */
 export function testAllowRule(
   rule: string,
   toolName: string,
   primaryValue?: string,
   resolvedValue?: string,
+  platform: NodeJS.Platform = process.platform,
 ): boolean {
   const m = rule.match(/^([^(]+?)(?:\((.*)\))?$/);
   if (!m) return false;
@@ -50,7 +54,7 @@ export function testAllowRule(
   if (!likeMatch(toolName, namePat)) return false;
   if (argPat === undefined || argPat === '') return true;
   if (primaryValue && likeMatch(primaryValue, argPat)) return true;
-  if (resolvedValue && likeMatch(resolvedValue, argPat)) return true;
+  if (resolvedValue && likeMatch(resolvedValue, argPat, platform !== 'win32')) return true;
   return false;
 }
 
@@ -84,12 +88,12 @@ export function persistRuleFor(
   args: Record<string, unknown>,
   cwd: string,
 ): string {
-  if (name === 'run_powershell') {
+  if (name === 'run_powershell' || name === 'bash') {
     const first = String(args['command'] ?? '')
       .trim()
       .split(/\s+/)[0];
-    if (first) return `run_powershell(${first} *)`;
-    return 'run_powershell';
+    if (first) return `${name}(${first} *)`;
+    return name;
   }
   if (primaryArg === 'path') {
     const { resolved } = getPrimaryArg(primaryArg, args, cwd);
@@ -106,5 +110,5 @@ export function matchesAllowlist(
   cwd: string,
 ): boolean {
   const { primary, resolved } = getPrimaryArg(primaryArg, args, cwd);
-  return rules.some((r) => testAllowRule(r.rule, name, primary, resolved));
+  return rules.some((r) => testAllowRule(r.rule, name, primary, resolved, process.platform));
 }

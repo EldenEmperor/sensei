@@ -135,16 +135,36 @@ async function httpGet(url: string, timeoutMs = 30000, headers: Record<string, s
   };
 }
 
-export function findBrowser(): string | null {
-  const pf = process.env.ProgramFiles ?? 'C:\\Program Files';
-  const pf86 = process.env['ProgramFiles(x86)'] ?? 'C:\\Program Files (x86)';
-  const candidates = [
-    path.join(pf86, 'Microsoft', 'Edge', 'Application', 'msedge.exe'),
-    path.join(pf, 'Microsoft', 'Edge', 'Application', 'msedge.exe'),
-    path.join(pf, 'Google', 'Chrome', 'Application', 'chrome.exe'),
-    path.join(pf86, 'Google', 'Chrome', 'Application', 'chrome.exe'),
+export function browserCandidates(platform: NodeJS.Platform = process.platform): string[] {
+  if (platform === 'win32') {
+    const pf = process.env.ProgramFiles ?? 'C:\\Program Files';
+    const pf86 = process.env['ProgramFiles(x86)'] ?? 'C:\\Program Files (x86)';
+    return [
+      path.join(pf86, 'Microsoft', 'Edge', 'Application', 'msedge.exe'),
+      path.join(pf, 'Microsoft', 'Edge', 'Application', 'msedge.exe'),
+      path.join(pf, 'Google', 'Chrome', 'Application', 'chrome.exe'),
+      path.join(pf86, 'Google', 'Chrome', 'Application', 'chrome.exe'),
+    ];
+  }
+  if (platform === 'darwin') {
+    return [
+      '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+      '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge',
+      '/Applications/Chromium.app/Contents/MacOS/Chromium',
+    ];
+  }
+  return [
+    '/usr/bin/google-chrome',
+    '/usr/bin/google-chrome-stable',
+    '/usr/bin/chromium',
+    '/usr/bin/chromium-browser',
+    '/usr/bin/microsoft-edge',
+    '/snap/bin/chromium',
   ];
-  for (const p of candidates) {
+}
+
+export function findBrowser(platform: NodeJS.Platform = process.platform): string | null {
+  for (const p of browserCandidates(platform)) {
     try {
       if (fs.existsSync(p)) return p;
     } catch {

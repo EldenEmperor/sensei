@@ -24,7 +24,7 @@ npm test                        # offline test suite, no API key needed
 npm run dev -- --local          # interactive TUI against local Ollama
 ```
 
-Requires Node ≥ 22, plus one of:
+Runs on Windows, macOS, and Linux (the shell tool is `run_powershell`/pwsh on Windows, `bash` on POSIX; hooks run in pwsh or sh respectively). Requires Node ≥ 22, plus one of:
 
 - `ANTHROPIC_API_KEY` — Claude models (`--model claude-opus-5` auto-selects the Anthropic API)
 - `OPENAI_API_KEY` — GPT models (the default)
@@ -111,7 +111,7 @@ See `examples/drive-spawn.mjs` (child-process driver with `--continue`) and `exa
 
 ## General tooling
 
-`read_file` `write_file` `edit_file` `multi_edit` `glob` `grep` `run_powershell` (foreground or `run_in_background` → `task_output`/`kill_task`) · subagents: `task`, `verify`, `task_parallel` (≤3 concurrent, in-process) · `todo_write` · `web_search` / `web_fetch` / `web_browser` (headless Edge/Chrome) · `skill` · `exit_plan_mode` · every configured MCP server's tools as `mcp__<server>__<tool>`.
+`read_file` `write_file` `edit_file` `multi_edit` `glob` `grep` · shell: `run_powershell` on Windows / `bash` on macOS+Linux (foreground or `run_in_background` → `task_output`/`kill_task`) · subagents: `task`, `verify`, `task_parallel` (≤3 concurrent, in-process) · `todo_write` · `web_search` / `web_fetch` / `web_browser` (headless Edge/Chrome) · `skill` · `exit_plan_mode` · every configured MCP server's tools as `mcp__<server>__<tool>`.
 
 ## Architecture
 

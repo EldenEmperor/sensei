@@ -3,6 +3,7 @@
 // Exit codes: 0 success; 1 turn error (API/key/network); 2 usage error.
 
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { SenseiAgent } from '../core/agent.js';
 import { ConfigStore } from '../core/config.js';
 import { preflightProvider, resolveProvider, setActiveModel } from '../core/providers.js';
@@ -211,12 +212,17 @@ export async function main(argv: string[]): Promise<number> {
   return error ? 1 : 0;
 }
 
-// invoked directly (not imported as a library)
-const isDirect =
-  process.argv[1] &&
-  (import.meta.url.endsWith(process.argv[1].replace(/\\/g, '/')) ||
-    import.meta.url.includes('cli/main') ||
-    process.argv[1].includes('sensei'));
+// invoked directly (not imported as a library): argv[1] is this module
+const isDirect = (() => {
+  try {
+    if (!process.argv[1]) return false;
+    const a = path.resolve(process.argv[1]);
+    const b = fileURLToPath(import.meta.url);
+    return process.platform === 'win32' ? a.toLowerCase() === b.toLowerCase() : a === b;
+  } catch {
+    return false;
+  }
+})();
 if (isDirect) {
   main(process.argv.slice(2)).then(
     (code) => process.exit(code),

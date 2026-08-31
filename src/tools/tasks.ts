@@ -6,6 +6,7 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import type { ChatMessage } from '../core/types.js';
+import { getShell, type ShellSpec } from './platformShell.js';
 import type { ToolRegistry } from './registry.js';
 
 interface BgTask {
@@ -26,20 +27,26 @@ interface BgTask {
 const tasks = new Map<string, BgTask>();
 let nextId = 0;
 
-export function startBackgroundTask(command: string, cwd: string, configDir: string): string {
+export function startBackgroundTask(
+  command: string,
+  cwd: string,
+  configDir: string,
+  shell: ShellSpec = getShell(),
+): string {
   nextId++;
   const id = `bg${nextId}`;
   const dir = path.join(configDir, 'tasks', String(process.pid));
   fs.mkdirSync(dir, { recursive: true });
   const outFile = path.join(dir, `${id}.out`);
   const errFile = path.join(dir, `${id}.err`);
-  // -EncodedCommand sidesteps argument-quoting mangling of pipes/quotes
-  const enc = Buffer.from(command, 'utf16le').toString('base64');
+  // Windows uses -EncodedCommand to sidestep argument-quoting mangling of
+  // pipes/quotes; POSIX bash -c passes the command through untouched.
+  const bg = shell.bgSpawn(command);
   let p: ChildProcess;
   try {
     const outFd = fs.openSync(outFile, 'a');
     const errFd = fs.openSync(errFile, 'a');
-    p = spawn('pwsh', ['-NoProfile', '-NonInteractive', '-EncodedCommand', enc], {
+    p = spawn(bg.exe, bg.args, {
       cwd,
       windowsHide: true,
       stdio: ['ignore', outFd, errFd],

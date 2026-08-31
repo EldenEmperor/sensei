@@ -68,7 +68,7 @@ export function getSkills(cwd: string, configDir: string): SkillMeta[] {
 
 function skillBodyPrompt(s: SkillMeta): string {
   const body = parseSkillFile(s.path).body;
-  return `# Skill: ${s.name}\n(Supporting files for this skill live in ${s.dir} — reference them by full path; scripts there can be run with run_powershell.)\n\n${body}`;
+  return `# Skill: ${s.name}\n(Supporting files for this skill live in ${s.dir} — reference them by full path; scripts there can be run with the shell tool.)\n\n${body}`;
 }
 
 /** The prompt submitted when a user invokes /<skillname> args. */
@@ -76,7 +76,7 @@ export function getSkillPrompt(s: SkillMeta, args = ''): string {
   const parsed = parseSkillFile(s.path);
   const hadPlaceholder = /\$ARGUMENTS/.test(parsed.body);
   const body = parsed.body.replace(/\$ARGUMENTS/g, args);
-  let p = `# Skill: ${s.name}\n(Supporting files for this skill live in ${s.dir} — reference them by full path; scripts there can be run with run_powershell.)\n\n${body}`;
+  let p = `# Skill: ${s.name}\n(Supporting files for this skill live in ${s.dir} — reference them by full path; scripts there can be run with the shell tool.)\n\n${body}`;
   if (args && !hadPlaceholder) p += `\n\nUser input: ${args}`;
   return p;
 }
