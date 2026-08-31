@@ -7,7 +7,7 @@ import os from 'node:os';
 import path from 'node:path';
 import type { ChatClient } from '../src/core/chat/client.js';
 import { ConfigStore } from '../src/core/config.js';
-import type { AgentEvent, AgentHost } from '../src/core/events.js';
+import type { AgentEvent, AgentHost, PlanApprovalDecision } from '../src/core/events.js';
 import type {
   ChatRequest,
   ChatResponse,
@@ -80,8 +80,10 @@ export class RecordingHost implements AgentHost {
     return Promise.resolve(this.permissionResponse);
   }
 
-  requestPlanApproval(): Promise<boolean> {
-    return Promise.resolve(false);
+  planApprovalResponse: PlanApprovalDecision = { approved: false };
+
+  requestPlanApproval(): Promise<PlanApprovalDecision> {
+    return Promise.resolve(this.planApprovalResponse);
   }
 
   notes(): string[] {

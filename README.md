@@ -18,20 +18,29 @@ A terminal AI agent for debugging logs — a Claude Code-style agent (TypeScript
 
 ## Setup
 
+One command after cloning:
+
+```
+git clone <repo> && cd sensei
+npm run setup
+```
+
+The setup script checks Node ≥ 22, installs dependencies, builds, links the global
+`sensei` command, runs the offline test suite, then interactively configures your
+provider and model into `~/.sensei/config.json` (Anthropic / OpenAI / company gateway /
+local Ollama). `npm run setup -- --yes` skips the interactive part. Re-running merges
+into your existing config rather than clobbering it.
+
+Manual equivalent:
+
 ```
 npm install
 npm test                        # offline test suite, no API key needed
-npm run dev -- --local          # interactive TUI against local Ollama
+npm run build && npm link       # `sensei` on your PATH
+npm run dev -- --local          # or: interactive TUI against local Ollama, no link
 ```
 
-### Install as the `sensei` command
-
-```
-npm run build                   # compiles src → dist
-npm link                        # links dist/cli/main.js onto your PATH as `sensei`
-```
-
-Then launch it from any directory — bare `sensei` opens the interactive TUI in that
+Then launch from any directory — bare `sensei` opens the interactive TUI in that
 directory, `sensei "prompt"` runs headless. After changing the source, `npm run build`
 alone refreshes the linked command (the link points at this repo).
 
@@ -109,7 +118,17 @@ and the cost line shows `(~Nk cached)`. `/provider` in the TUI lists/switches en
 npm run dev -- [--provider <name>] [--local] [--model <name>] [--yolo] [--plan] [--continue [id]]
 ```
 
-Streaming markdown answers, live tool-call lines, todo checklist, y/n/a/p permission prompts with diff previews, plan mode; Esc/Ctrl+C aborts the in-flight turn, Ctrl+D exits (saving the session). The composer has full cursor editing (←/→, Ctrl+A/E home/end, Ctrl+W/U word/line delete, Alt+←/→ words), multiline input (`\` then Enter), paste handling, history (↑/↓), Tab completion for /commands and `@file` paths, `!cmd` to run a shell command directly, Ctrl+O to toggle verbose tool output — and typing while sensei is busy queues the message for the next turn. `/help` lists the slash commands: `/clear /compact /plan /style /color /model /provider /config /mcp /permissions /skills /newskill /tasks /todos /cost /memory /init /investigate /resume /exit` — plus custom commands and direct skill invocation as `/<skillname>`.
+Streaming markdown answers, live tool-call lines, todo checklist, y/n/a/p permission prompts with diff previews, plan mode; Esc/Ctrl+C aborts the in-flight turn, Ctrl+D exits (saving the session). The composer has full cursor editing (←/→, Ctrl+A/E home/end, Ctrl+W/U word/line delete, Alt+←/→ words), multiline input (`\` then Enter), paste handling, history (↑/↓), Tab completion for /commands and `@file` paths, `!cmd` to run a shell command directly, Ctrl+O to toggle verbose tool output — and typing while sensei is busy queues the message for the next turn. Typing `/` opens a live command menu (built-ins, custom commands, and skills with their
+descriptions) — type to filter, ↑/↓ to select, Tab to complete, Enter to run, Esc to
+dismiss. `/help` lists everything: `/clear /compact /plan /style /color /model /provider
+/config /mcp /permissions /skills /newskill /tasks /todos /cost /memory /init
+/investigate /resume /exit` — plus custom commands and direct skill invocation as
+`/<skillname>`.
+
+`/plan` toggles plan mode; `/plan <task>` enters plan mode and starts planning that task
+in one step. Sensei researches read-only, then presents the plan: `[y]` approve &
+execute, `[a]` approve and auto-accept file edits for the rest of the session, `[n]`/Esc
+keep planning.
 
 Custom commands (`.sensei/commands/<name>.md`, project, or `~/.sensei/commands/`) support frontmatter — `description` and `argument-hint` (shown in /help), `allowed-tools` (comma list granted as allow rules for that turn) — with `$ARGUMENTS` and `$1..$n` substitution (double-quoted spans count as one argument). They also work headlessly: `sensei -p "/mycmd args"`. A `statusline` config key names a command whose first stdout line replaces the TUI status bar (JSON context on stdin, re-run each turn).
 

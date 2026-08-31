@@ -638,8 +638,9 @@ export class SenseiAgent {
         if (this.policy.mode !== 'interactive') {
           return 'Plan recorded (non-interactive; still in plan mode — the user will review).';
         }
-        const approved = await this.host.requestPlanApproval(String(a.plan ?? ''));
-        if (approved) {
+        const decision = await this.host.requestPlanApproval(String(a.plan ?? ''));
+        if (decision.approved) {
+          if (decision.acceptEdits && this.policy.mode === 'interactive') this.policy.acceptEdits = true;
           this.setPlanMode(false);
           return 'APPROVED — plan mode is now off. Proceed to execute the plan.';
         }

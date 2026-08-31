@@ -13,9 +13,15 @@ export type AgentEvent =
   | { type: 'usage'; promptTokens: number; completionTokens: number; costUsd: number | null }
   | { type: 'turn-end'; finalText: string | null; finishReason: string | null; aborted: boolean; rounds: number };
 
+export interface PlanApprovalDecision {
+  approved: boolean;
+  /** Approve AND auto-accept file edits for the rest of the session. */
+  acceptEdits?: boolean;
+}
+
 /** The UI seam: both the headless CLI and the Ink TUI implement this. */
 export interface AgentHost {
   onEvent(e: AgentEvent): void;
   requestPermission(req: PermissionRequest): Promise<PermissionDecision>;
-  requestPlanApproval(plan: string): Promise<boolean>;
+  requestPlanApproval(plan: string): Promise<PlanApprovalDecision>;
 }

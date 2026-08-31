@@ -138,6 +138,74 @@ describe('Ink App', () => {
     expect(lastFrame()).not.toContain('SHEATH-SPRITE'); // flourish over
   });
 
+  it('slash menu: filters, arrows+Tab complete, Enter runs, Esc dismisses', async () => {
+    const { agent, host } = makeTuiAgent(new FakeChatClient());
+    const { lastFrame, stdin } = render(
+      React.createElement(App, { agent, host, version: 'test', bannerFrames: [] }),
+    );
+    await sleep(50);
+    stdin.write('/c');
+    await sleep(30);
+    let frame = lastFrame()!;
+    expect(frame).toContain('/clear');
+    expect(frame).toContain('/color');
+    expect(frame).toContain('reset the conversation');
+    stdin.write(String.fromCharCode(27) + '[B'); // Down arrow -> /color
+    await sleep(20);
+    stdin.write('\t'); // Tab completes the selection
+    await sleep(30);
+    expect(lastFrame()).toContain('❯ /color'); // completed into the composer (trailing space trimmed in frame)
+    stdin.write(String.fromCharCode(21)); // Ctrl+U clears the composer
+    await sleep(20);
+    stdin.write('/cle');
+    await sleep(20);
+    stdin.write('\r'); // Enter runs the selected /clear
+    await sleep(50);
+    expect(lastFrame()).toContain('conversation cleared');
+    stdin.write('/c');
+    await sleep(20);
+    stdin.write(String.fromCharCode(27)); // Esc dismisses the menu
+    await sleep(30);
+    expect(lastFrame()).not.toContain('reset the conversation');
+  });
+
+  it('/plan <task> plans immediately; [a] approves with auto-accept edits', async () => {
+    const fake = new FakeChatClient();
+    fake.enqueue({
+      choices: [
+        {
+          message: {
+            role: 'assistant',
+            content: null,
+            tool_calls: [
+              { id: 'p1', type: 'function', function: { name: 'exit_plan_mode', arguments: JSON.stringify({ plan: '1. fix it' }) } },
+            ],
+          },
+          finish_reason: 'tool_calls',
+        },
+      ],
+      usage: { prompt_tokens: 1, completion_tokens: 1 },
+    });
+    fake.enqueue(stopResponse('executing'));
+    const { agent, host } = makeTuiAgent(fake);
+    const { lastFrame, stdin } = render(
+      React.createElement(App, { agent, host, version: 'test', bannerFrames: [] }),
+    );
+    await sleep(50);
+    stdin.write('/plan fix the bug');
+    await sleep(20);
+    stdin.write('\r');
+    await sleep(200);
+    expect(agent.messages.some((m) => m.role === 'user' && m.content === 'fix the bug')).toBe(true);
+    const frame = lastFrame()!;
+    expect(frame).toContain('Proposed plan:');
+    expect(frame).toContain('auto-accept file edits');
+    stdin.write('a');
+    await sleep(200);
+    expect(agent.planMode).toBe(false);
+    expect((agent.policy as { acceptEdits?: boolean }).acceptEdits).toBe(true);
+  });
+
   it('plan mode toggles via /plan and blocks writes', async () => {
     const fake = new FakeChatClient();
     const { agent, host } = makeTuiAgent(fake);

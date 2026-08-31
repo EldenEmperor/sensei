@@ -2,7 +2,7 @@
 // answer (text mode) or the machine-readable payload (json/stream-json) is
 // the only thing on stdout.
 
-import type { AgentEvent, AgentHost } from '../core/events.js';
+import type { AgentEvent, AgentHost, PlanApprovalDecision } from '../core/events.js';
 import type { PermissionDecision, PermissionRequest } from '../core/types.js';
 import { formatToolArgs, sanitizeTerminalText, stripThinkForDisplay } from './textOutput.js';
 
@@ -51,7 +51,7 @@ export class HeadlessHost implements AgentHost {
     return Promise.resolve({ allow: false, reason: 'non-interactive' });
   }
 
-  requestPlanApproval(_plan: string): Promise<boolean> {
-    return Promise.resolve(false);
+  requestPlanApproval(_plan: string): Promise<PlanApprovalDecision> {
+    return Promise.resolve({ approved: false });
   }
 }

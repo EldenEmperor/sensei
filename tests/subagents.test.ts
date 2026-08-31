@@ -121,13 +121,24 @@ describe('exit_plan_mode', () => {
     host.permissionResponse = { allow: false, reason: 'denied' }; // unrelated
     // approve the plan
     const origApproval = host.requestPlanApproval.bind(host);
-    host.requestPlanApproval = () => Promise.resolve(true);
+    host.requestPlanApproval = () => Promise.resolve({ approved: true });
     await agent.ask('plan it');
     host.requestPlanApproval = origApproval;
     expect(agent.planMode).toBe(false);
     const toolMsg = agent.messages.find((m) => m.role === 'tool');
     expect(toolMsg?.content).toMatch(/^APPROVED/);
     expect(String(agent.messages[0].content)).not.toContain('Plan mode (ACTIVE)');
+  });
+
+  it('approval with acceptEdits flips the policy for the rest of the session', async () => {
+    fake.enqueue(toolCallResponse([{ id: 'p1', name: 'exit_plan_mode', args: { plan: '1. edit files' } }]));
+    fake.enqueue(stopResponse('executing'));
+    const agent = makeAgent({ planMode: true, interactive: true });
+    host.planApprovalResponse = { approved: true, acceptEdits: true };
+    await agent.ask('plan it');
+    host.planApprovalResponse = { approved: false };
+    expect(agent.planMode).toBe(false);
+    expect((agent.policy as { acceptEdits?: boolean }).acceptEdits).toBe(true);
   });
 
   it('denial stays in plan mode', async () => {

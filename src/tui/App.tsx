@@ -6,13 +6,13 @@
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { Box, Static, Text, useApp, useInput } from 'ink';
+import { Box, Static, Text, useApp, useInput, useStdout } from 'ink';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import type { SenseiAgent } from '../core/agent.js';
 import { buildCommandPrompt, findCustomCommand, listCustomCommands } from '../core/commands.js';
 import { getActiveModel, getMemory, OUTPUT_STYLES } from '../core/config.js';
 import { listProviders, resolveProvider, setActiveModel } from '../core/providers.js';
-import type { AgentEvent, AgentHost } from '../core/events.js';
+import type { AgentEvent, AgentHost, PlanApprovalDecision } from '../core/events.js';
 import { INIT_PROMPT, INVESTIGATE_PROMPT, NEW_SKILL_PROMPT } from '../core/prompts.js';
 import { loadSessionFile } from '../core/sessions.js';
 import { getSkills } from '../core/skills.js';
@@ -31,6 +31,14 @@ import {
 } from './composer.js';
 import { renderDiffPreview } from './diff.js';
 import { renderMarkdown } from './markdown.js';
+import {
+  applySlashCompletion,
+  BUILTIN_COMMANDS,
+  buildSlashItems,
+  helpLines,
+  slashMenuQuery,
+  slashMenuView,
+} from './slashMenu.js';
 import { ACCENT_PRESETS, makeTheme, protectTerminalText, resolveAccent, type Theme } from './theme.js';
 
 const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
@@ -46,8 +54,8 @@ export class DeferredHost implements AgentHost {
       ? this.target.requestPermission(req)
       : Promise.resolve({ allow: false, reason: 'non-interactive' });
   }
-  requestPlanApproval(plan: string): Promise<boolean> {
-    return this.target ? this.target.requestPlanApproval(plan) : Promise.resolve(false);
+  requestPlanApproval(plan: string): Promise<PlanApprovalDecision> {
+    return this.target ? this.target.requestPlanApproval(plan) : Promise.resolve({ approved: false });
   }
 }
 
@@ -78,35 +86,9 @@ interface AppProps {
 
 const SUBAGENT_TOOLS = ['task', 'verify', 'task_parallel'];
 
-const HELP_LINES = [
-  '  /help            show this help',
-  '  /clear           reset the conversation (and todos)',
-  '  /plan            toggle plan mode (read-only until you approve a plan)',
-  '  /style [name]    response style: default|concise|explanatory|teaching',
-  '  /color [name|hex] accent color: indigo|jade|gold|teal|red or #RRGGBB',
-  '  /model [name]    show or set the model (setting persists to config)',
-  '  /provider [name] show or switch the API provider (openai|anthropic|local|custom)',
-  '  /config          show effective config',
-  '  /permissions     list allowlist rules',
-  '  /todos           show the current checklist',
-  '  /cost            token usage and estimated cost',
-  '  /mcp             MCP server status and tools',
-  '  /skills          list available skills',
-  '  /newskill <name> [purpose]  have the agent author a new skill',
-  '  /tasks           list background tasks',
-  '  /compact         summarize the conversation to reclaim context',
-  '  /memory          show loaded SENSEI.md memory files',
-  '  /init            explore this directory and write a SENSEI.md',
-  '  /investigate [path]  deep-map a log file\'s structure (default: newest .log in cwd)',
-  '  /resume [n|id]   list recent sessions / continue one',
-  '  /exit            quit (also /quit, or Ctrl+D)',
-  '  custom commands: .sensei\\commands\\<name>.md ($ARGUMENTS substituted)',
-  '  keys: !cmd runs in the shell directly · @path Tab-completes files · \\ then Enter = new line',
-  '        typing while busy queues the message · Ctrl+O verbose tool output · Ctrl+A/E/W/U edit',
-];
-
 export function App({ agent, host, version, bannerFrames, sprites, mcp }: AppProps): React.ReactElement {
   const { exit } = useApp();
+  const { stdout } = useStdout();
   const nextId = useRef(0);
   const [items, setItems] = useState<Item[]>([]);
   const [streamText, setStreamText] = useState('');
@@ -115,8 +97,10 @@ export function App({ agent, host, version, bannerFrames, sprites, mcp }: AppPro
   const [todos, setTodos] = useState<Todo[]>([]);
   const [frame, setFrame] = useState(0);
   const [permReq, setPermReq] = useState<{ req: PermissionRequest; resolve: (d: PermissionDecision) => void } | null>(null);
-  const [planReq, setPlanReq] = useState<{ plan: string; resolve: (ok: boolean) => void } | null>(null);
+  const [planReq, setPlanReq] = useState<{ plan: string; resolve: (d: PlanApprovalDecision) => void } | null>(null);
   const [comp, setComp] = useState<ComposerState>(EMPTY_COMPOSER);
+  const [menuSel, setMenuSel] = useState(0);
+  const [menuDismissed, setMenuDismissed] = useState(false);
   const [tokens, setTokens] = useState<{ inTok: number; outTok: number }>({ inTok: 0, outTok: 0 });
   const [queuedCount, setQueuedCount] = useState(0);
   const [statusOverride, setStatusOverride] = useState<string | null>(null);
@@ -132,6 +116,25 @@ export function App({ agent, host, version, bannerFrames, sprites, mcp }: AppPro
   const [flourishStart, setFlourishStart] = useState<number | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const streamRef = useRef('');
+
+  // slash menu: selection/dismissal reset whenever the composer text changes;
+  // the view itself is derived per render (pure) from text + items + selection
+  useEffect(() => {
+    setMenuSel(0);
+    setMenuDismissed(false);
+  }, [comp.text]);
+
+  const menuOpen = slashMenuQuery(comp.text) !== null;
+  const allCommands = useMemo(() => {
+    if (!menuOpen) return [];
+    return buildSlashItems(
+      BUILTIN_COMMANDS,
+      listCustomCommands(agent.store.cwd, agent.store.configDir),
+      getSkills(agent.store.cwd, agent.store.configDir),
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [menuOpen]);
+  const menuView = menuDismissed ? null : slashMenuView(comp.text, allCommands, menuSel);
 
   const theme: Theme = useMemo(() => {
     const accent = resolveAccent(String(agent.store.config.accent)) ?? ACCENT_PRESETS.indigo;
@@ -252,7 +255,7 @@ export function App({ agent, host, version, bannerFrames, sprites, mcp }: AppPro
         }
       },
       requestPermission: (req) => new Promise<PermissionDecision>((resolve) => setPermReq({ req, resolve })),
-      requestPlanApproval: (plan) => new Promise<boolean>((resolve) => setPlanReq({ plan, resolve })),
+      requestPlanApproval: (plan) => new Promise<PlanApprovalDecision>((resolve) => setPlanReq({ plan, resolve })),
     };
     return () => {
       host.target = null;
@@ -362,7 +365,7 @@ export function App({ agent, host, version, bannerFrames, sprites, mcp }: AppPro
     const t = theme;
     switch (cmd) {
       case '/help': {
-        for (const l of HELP_LINES) push(l);
+        for (const l of helpLines()) push(l);
         const customs = listCustomCommands(agent.store.cwd, agent.store.configDir);
         for (const c of customs) {
           push(t.dim(`  /${c.name} ${c.argumentHint}`.trimEnd() + (c.description ? `  — ${c.description}` : '')));
@@ -374,6 +377,15 @@ export function App({ agent, host, version, bannerFrames, sprites, mcp }: AppPro
         push(t.dim('conversation cleared'));
         break;
       case '/plan': {
+        if (arg) {
+          // /plan <task>: enter plan mode (if off) and plan that task now
+          if (!agent.planMode) {
+            agent.setPlanMode(true);
+            push(t.dim('plan mode ON — read-only until you approve a plan'));
+          }
+          run(arg);
+          break;
+        }
         agent.setPlanMode(!agent.planMode);
         push(t.dim(agent.planMode ? 'plan mode ON — read-only until you approve a plan' : 'plan mode OFF'));
         break;
@@ -641,11 +653,7 @@ export function App({ agent, host, version, bannerFrames, sprites, mcp }: AppPro
     else run(line);
   };
 
-  const submit = (): void => {
-    const line = comp.text.trim();
-    setComp(EMPTY_COMPOSER);
-    historyIdx.current = -1;
-    if (!line) return;
+  const submitLine = (line: string): void => {
     history.current.push(line);
     if (busy) {
       queuedRef.current.push(line);
@@ -654,6 +662,14 @@ export function App({ agent, host, version, bannerFrames, sprites, mcp }: AppPro
       return;
     }
     submitText(line);
+  };
+
+  const submit = (): void => {
+    const line = comp.text.trim();
+    setComp(EMPTY_COMPOSER);
+    historyIdx.current = -1;
+    if (!line) return;
+    submitLine(line);
   };
 
   useInput((ch, key) => {
@@ -672,10 +688,45 @@ export function App({ agent, host, version, bannerFrames, sprites, mcp }: AppPro
       return;
     }
     if (planReq) {
-      const r = planReq;
-      setPlanReq(null);
-      r.resolve(ch.toLowerCase() === 'y');
+      const done = (d: PlanApprovalDecision): void => {
+        const r = planReq;
+        setPlanReq(null);
+        r.resolve(d);
+      };
+      const c = ch.toLowerCase();
+      if (c === 'y') done({ approved: true });
+      else if (c === 'a') {
+        push(theme.dim('(auto-accepting file edits for this session)'));
+        done({ approved: true, acceptEdits: true });
+      } else if (c === 'n' || key.escape || key.return) done({ approved: false });
       return;
+    }
+    // slash menu captures Esc/Up/Down/Tab/Enter while visible
+    if (menuView) {
+      if (key.escape) {
+        setMenuDismissed(true);
+        return;
+      }
+      if (key.upArrow) {
+        setMenuSel(Math.max(0, menuView.selected - 1));
+        return;
+      }
+      if (key.downArrow) {
+        setMenuSel(Math.min(menuView.items.length - 1, menuView.selected + 1));
+        return;
+      }
+      if (key.tab) {
+        setComp(applySlashCompletion(comp, menuView.items[menuView.selected]));
+        return;
+      }
+      if (key.return) {
+        const line = '/' + menuView.items[menuView.selected].name;
+        setComp(EMPTY_COMPOSER);
+        historyIdx.current = -1;
+        submitLine(line);
+        return;
+      }
+      // other keys fall through: typing refilters, backspace narrows
     }
     if (busy && (key.escape || (key.ctrl && ch === 'c'))) {
       abortRef.current?.abort();
@@ -742,14 +793,8 @@ export function App({ agent, host, version, bannerFrames, sprites, mcp }: AppPro
       return;
     }
     if (key.tab) {
-      if (comp.text.startsWith('/')) {
-        const partial = comp.text.slice(1).toLowerCase();
-        const all = HELP_LINES.map((l) => l.trim().split(/\s+/)[0]).filter((c) => c.startsWith('/'));
-        const match = all.find((c) => c.slice(1).startsWith(partial));
-        if (match) setComp({ text: match + ' ', cursor: match.length + 1 });
-        return;
-      }
-      // @file completion against the working directory
+      // @file completion against the working directory (slash completion is
+      // handled by the menu above)
       const r = completeFileToken(comp, (dir) =>
         fs
           .readdirSync(path.resolve(agent.store.cwd, dir), { withFileTypes: true })
@@ -848,7 +893,9 @@ export function App({ agent, host, version, bannerFrames, sprites, mcp }: AppPro
         <Box flexDirection="column">
           <Text>{t.bold(t.accent('Proposed plan:'))}</Text>
           <Text>{renderMarkdown(planReq.plan, t)}</Text>
-          <Text>{t.dim('  Approve this plan and let Sensei execute it? [y/N]')}</Text>
+          <Text>
+            {t.dim('  Approve? [y] yes, execute · [a] yes + auto-accept file edits this session · [n]/Esc no, keep planning')}
+          </Text>
         </Box>
       ) : (
         <Box flexDirection="column">
@@ -878,6 +925,25 @@ export function App({ agent, host, version, bannerFrames, sprites, mcp }: AppPro
               );
             });
           })()}
+          {menuView
+            ? menuView.rows.map((it, i) => {
+                const sel = menuView.start + i === menuView.selected;
+                const label = `/${it.name}${it.hint ? ' ' + it.hint : ''}`;
+                const cols = stdout?.columns ?? 80;
+                let desc = it.desc;
+                const room = cols - label.length - 6;
+                if (desc.length > room) desc = room > 1 ? desc.slice(0, room - 1) + '…' : '';
+                return (
+                  <Text key={`${it.source}:${it.name}`}>
+                    {sel ? t.accent('❯ ') : '  '}
+                    {sel ? <Text inverse>{label}</Text> : label}
+                    {'  '}
+                    <Text dimColor>{desc}</Text>
+                  </Text>
+                );
+              })
+            : null}
+          {menuView && menuView.moreBelow > 0 ? <Text>{t.dim(`  … ${menuView.moreBelow} more`)}</Text> : null}
         </Box>
       )}
       <Text>
