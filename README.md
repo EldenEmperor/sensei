@@ -16,6 +16,8 @@ A terminal AI agent for debugging logs — a Claude Code-style agent (TypeScript
 
 > Originally implemented in PowerShell 7 and ported to TypeScript feature-by-feature ([PARITY.md](./PARITY.md)). The PS variant's final state lives at the git tag `ps-final`.
 
+**📚 Full documentation lives in [docs/](docs/README.md)** — [getting started](docs/getting-started.md) · [providers & API keys](docs/providers.md) · [TUI](docs/tui.md) · [headless CLI](docs/headless.md) · [permissions](docs/permissions.md) · [MCP servers](docs/mcp.md) · [hooks](docs/hooks.md) · [customization](docs/customization.md) · [log tools](docs/log-tools.md) · [config reference](docs/configuration.md). This README is the overview.
+
 ## Setup
 
 One command after cloning:
