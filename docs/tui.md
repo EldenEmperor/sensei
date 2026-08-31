@@ -85,6 +85,19 @@ When a tool needs approval you'll see the call (file edits show a line diff) and
 `[y]es / [n]o / [a]lways this session / [p]ersist to allowlist`. Details in
 [Permissions](permissions.md).
 
+## The working status
+
+While sensei works, the spinner line is a live readout instead of a bare "thinking…":
+
+```
+⠸ grep… 12s · ctx 43k/300k (14%) · ~12.3k in / 1.2k out
+```
+
+- the active tool (or `thinking…` while the model responds) and elapsed seconds
+- **context build-up**: transcript size vs `context_char_budget`, ticking up as tool
+  results land — when it nears ~80% the conversation auto-compacts
+- session tokens in/out so far (updates each model round)
+
 ## Status bar
 
 The bottom line shows `model · provider · tokens in/out · PLAN` (when active) and the

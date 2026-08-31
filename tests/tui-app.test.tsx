@@ -104,6 +104,34 @@ describe('Ink App', () => {
     expect(toolMsg?.content).toMatch(/Wrote 5 chars/);
   });
 
+  it('shows live context build-up in the working status', async () => {
+    const slowClient: ChatClient = {
+      chat: async (req) => {
+        await sleep(250);
+        return stopResponse(`done after ${req.messages.length} messages`);
+      },
+    };
+    const tmp = makeTempDir('sensei-ts-ctx-');
+    const store = makeStore(tmp);
+    store.config.theme = false;
+    store.config.stream = false;
+    const host = new DeferredHost();
+    const agent = new SenseiAgent({ configStore: store, host, permissionPolicy: { mode: 'yolo' }, chatClient: slowClient });
+    const { lastFrame, stdin } = render(
+      React.createElement(App, { agent, host, version: 'test', bannerFrames: [] }),
+    );
+    await sleep(50);
+    stdin.write('long thinking task');
+    await sleep(20);
+    stdin.write('\r');
+    await sleep(150);
+    const frame = lastFrame()!;
+    expect(frame).toContain('thinking…');
+    expect(frame).toMatch(/thinking… \d+s · ctx \d+k\/300k \(\d+%\)/);
+    await sleep(250); // turn finishes; the working status clears
+    expect(lastFrame()).not.toContain('· ctx ');
+  });
+
   it('plays the thinking sprite during a turn and the sheath flourish after', async () => {
     const slowClient: ChatClient = {
       chat: async () => {

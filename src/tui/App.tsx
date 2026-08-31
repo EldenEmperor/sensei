@@ -15,6 +15,7 @@ import { listProviders, resolveProvider, setActiveModel } from '../core/provider
 import type { AgentEvent, AgentHost, PlanApprovalDecision } from '../core/events.js';
 import { INIT_PROMPT, INVESTIGATE_PROMPT, NEW_SKILL_PROMPT } from '../core/prompts.js';
 import { loadSessionFile } from '../core/sessions.js';
+import { transcriptCharCount } from '../core/transcript.js';
 import { getSkills } from '../core/skills.js';
 import type { PermissionDecision, PermissionRequest, Todo } from '../core/types.js';
 import type { McpManager } from '../mcp/client.js';
@@ -117,6 +118,7 @@ export function App({ agent, host, version, bannerFrames, sprites, mcp }: AppPro
   const [flourishStart, setFlourishStart] = useState<number | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const streamRef = useRef('');
+  const turnStartRef = useRef<number | null>(null);
 
   // slash menu: selection/dismissal reset whenever the composer text changes;
   // the view itself is derived per render (pure) from text + items + selection
@@ -330,12 +332,14 @@ export function App({ agent, host, version, bannerFrames, sprites, mcp }: AppPro
   };
 
   const run = (prompt: string, extraAllowRules?: string[]): void => {
+    turnStartRef.current = Date.now();
     setBusy(true);
     abortRef.current = new AbortController();
     void agent
       .ask(prompt, { signal: abortRef.current.signal, extraAllowRules })
       .catch((e: Error) => push(theme.err(`✗ ${protectTerminalText(e.message)}`)))
       .finally(() => {
+        turnStartRef.current = null;
         setBusy(false);
         setActiveTool(null);
         streamRef.current = '';
@@ -850,7 +854,21 @@ export function App({ agent, host, version, bannerFrames, sprites, mcp }: AppPro
   let displayStream = streamText;
   const thinkIdx = displayStream.indexOf('<think>');
   if (thinkIdx >= 0 && !displayStream.includes('</think>')) displayStream = displayStream.slice(0, thinkIdx);
-  const spinnerLabel = activeTool ? `${activeTool}…` : 'thinking…';
+  // live working status: elapsed time, context fill (the transcript grows as
+  // tool results land, so this ticks up mid-turn), and session tokens — all
+  // read fresh on every 100ms spinner frame
+  const spinnerLabel = (() => {
+    const base = activeTool ? `${activeTool}…` : 'thinking…';
+    if (turnStartRef.current === null) return base;
+    const secs = Math.floor((Date.now() - turnStartRef.current) / 1000);
+    const chars = transcriptCharCount(agent.messages);
+    const budget = Number(agent.store.config.context_char_budget) || 300000;
+    const pct = Math.min(999, Math.round((chars / budget) * 100));
+    const k = (n: number) => (n / 1000).toFixed(1);
+    let label = `${base} ${secs}s · ctx ${Math.round(chars / 1000)}k/${Math.round(budget / 1000)}k (${pct}%)`;
+    if (agent.totalPromptTokens > 0) label += ` · ~${k(agent.totalPromptTokens)}k in / ${k(agent.totalCompletionTokens)}k out`;
+    return label;
+  })();
   const modelLabel =
     getActiveModel(agent.store.config, agent.provider) + (agent.local ? ' · local' : ` · ${agent.provider.name}`);
 
