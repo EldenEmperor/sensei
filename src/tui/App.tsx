@@ -8,7 +8,8 @@ import path from 'node:path';
 import { Box, Static, Text, useApp, useInput } from 'ink';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import type { SenseiAgent } from '../core/agent.js';
-import { costLine, getActiveModel, getMemory, OUTPUT_STYLES } from '../core/config.js';
+import { getActiveModel, getMemory, OUTPUT_STYLES } from '../core/config.js';
+import { listProviders, resolveProvider, setActiveModel } from '../core/providers.js';
 import type { AgentEvent, AgentHost } from '../core/events.js';
 import { INIT_PROMPT, INVESTIGATE_PROMPT, NEW_SKILL_PROMPT } from '../core/prompts.js';
 import { loadSessionFile } from '../core/sessions.js';
@@ -73,6 +74,7 @@ const HELP_LINES = [
   '  /style [name]    response style: default|concise|explanatory|teaching',
   '  /color [name|hex] accent color: indigo|jade|gold|teal|red or #RRGGBB',
   '  /model [name]    show or set the model (setting persists to config)',
+  '  /provider [name] show or switch the API provider (openai|anthropic|local|custom)',
   '  /config          show effective config',
   '  /permissions     list allowlist rules',
   '  /todos           show the current checklist',
@@ -129,7 +131,9 @@ export function App({ agent, host, version, bannerFrames, sprites, mcp }: AppPro
 
   const titleLines = (): string[] => {
     const t = theme;
-    const modelLabel = getActiveModel(agent.store.config, agent.local) + (agent.local ? ' (local · ollama)' : '');
+    const modelLabel =
+      getActiveModel(agent.store.config, agent.provider) +
+      (agent.local ? ' (local · ollama)' : ` (${agent.provider.name})`);
     return [
       t.bold(t.accent('  sensei')) + t.dim(` v${version} · log-debugging agent · model: ${modelLabel}`),
       t.dim('  ask about a log file, or /help for commands'),
@@ -317,18 +321,53 @@ export function App({ agent, host, version, bannerFrames, sprites, mcp }: AppPro
       }
       case '/model': {
         if (!arg) {
-          push(t.dim(`model: ${getActiveModel(agent.store.config, agent.local)}${agent.local ? ' (local)' : ''}`));
+          push(t.dim(`model: ${getActiveModel(agent.store.config, agent.provider)} (provider: ${agent.provider.name})`));
           break;
         }
-        if (agent.local) agent.store.config.local_model = arg;
-        else agent.store.config.model = arg;
+        setActiveModel(agent.store.config, agent.provider, arg);
         agent.store.save();
-        push(t.dim(`model set to ${arg}`));
+        agent.refreshProvider(); // model family may change the inferred provider
+        push(t.dim(`model set to ${arg} (provider: ${agent.provider.name})`));
+        break;
+      }
+      case '/provider': {
+        if (!arg) {
+          for (const name of listProviders(agent.store.config)) {
+            let line: string;
+            try {
+              const rp = resolveProvider(agent.store.config, { provider: name });
+              const key = rp.apiKey || rp.noAuth ? '✓ key' : '✗ no key';
+              const url = rp.baseUrl ?? '(default endpoint)';
+              line = `  ${name === agent.provider.name ? '*' : ' '} ${name} — ${rp.wire} wire · ${url} · ${key}`;
+            } catch (e) {
+              line = `    ${name} — ${(e as Error).message}`;
+            }
+            push(t.dim(line));
+          }
+          push(t.dim('  /provider <name> switches (persists to config)'));
+          break;
+        }
+        try {
+          const rp = resolveProvider(agent.store.config, { provider: arg });
+          agent.store.config.provider = arg;
+          agent.store.save();
+          agent.refreshProvider();
+          push(t.dim(`provider set to ${arg} (${rp.wire} wire) · model: ${getActiveModel(agent.store.config, agent.provider)}`));
+        } catch (e) {
+          push(t.err((e as Error).message));
+        }
         break;
       }
       case '/config': {
-        const cfg = { ...agent.store.config };
+        const cfg = { ...agent.store.config } as Record<string, unknown>;
         if (cfg.api_key) cfg.api_key = '(set)';
+        if (cfg.providers && typeof cfg.providers === 'object') {
+          const masked: Record<string, unknown> = {};
+          for (const [name, entry] of Object.entries(cfg.providers as Record<string, Record<string, unknown>>)) {
+            masked[name] = entry && entry.api_key && entry.api_key !== 'none' ? { ...entry, api_key: '(set)' } : entry;
+          }
+          cfg.providers = masked;
+        }
         for (const l of JSON.stringify(cfg, null, 2).split('\n')) push(t.dim(l));
         break;
       }
@@ -344,7 +383,7 @@ export function App({ agent, host, version, bannerFrames, sprites, mcp }: AppPro
         break;
       }
       case '/cost': {
-        const { line: cl } = costLine(agent.store.config, agent.local, tokens.inTok, tokens.outTok);
+        const { line: cl } = agent.costLine();
         push(t.dim(cl));
         break;
       }
@@ -590,7 +629,8 @@ export function App({ agent, host, version, bannerFrames, sprites, mcp }: AppPro
   const thinkIdx = displayStream.indexOf('<think>');
   if (thinkIdx >= 0 && !displayStream.includes('</think>')) displayStream = displayStream.slice(0, thinkIdx);
   const spinnerLabel = activeTool ? `${activeTool}…` : 'thinking…';
-  const modelLabel = getActiveModel(agent.store.config, agent.local) + (agent.local ? ' · local' : '');
+  const modelLabel =
+    getActiveModel(agent.store.config, agent.provider) + (agent.local ? ' · local' : ` · ${agent.provider.name}`);
 
   // pick the samurai's move for the moment: slash while a tool runs, summon
   // while subagents work, idle glint while the model thinks, sheath on finish

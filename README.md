@@ -1,6 +1,6 @@
 # sensei
 
-A terminal AI agent for debugging logs — a Claude Code-style agent (TypeScript/Node + Ink) powered by the OpenAI API or a local Ollama model. Full agentic tooling (read/write/edit/glob/grep/run, subagents, background tasks, MCP servers, skills, hooks) plus a family of log-specific tools that let the model analyze huge log files without drowning in tokens — including `log_investigate`, which maps ANY unknown log format and teaches the other tools to read it.
+A terminal AI agent for debugging logs — a Claude Code-style agent (TypeScript/Node + Ink) powered by the Anthropic API, the OpenAI API, a company LLM gateway, or a local Ollama model. Full agentic tooling (read/write/edit/glob/grep/run, subagents, background tasks, MCP servers, skills, hooks) plus a family of log-specific tools that let the model analyze huge log files without drowning in tokens — including `log_investigate`, which maps ANY unknown log format and teaches the other tools to read it.
 
 ```
    ██          ██
@@ -24,12 +24,46 @@ npm test                        # offline test suite, no API key needed
 npm run dev -- --local          # interactive TUI against local Ollama
 ```
 
-Requires Node ≥ 22, plus either `OPENAI_API_KEY` or a local [Ollama](https://ollama.com) (`--local`, default endpoint `localhost:11434`).
+Requires Node ≥ 22, plus one of:
+
+- `ANTHROPIC_API_KEY` — Claude models (`--model claude-opus-5` auto-selects the Anthropic API)
+- `OPENAI_API_KEY` — GPT models (the default)
+- a company gateway/proxy — one `providers` entry in `~/.sensei/config.json` (see Providers below)
+- a local [Ollama](https://ollama.com) (`--local`, default endpoint `localhost:11434`)
+
+## Providers
+
+The endpoint is picked by `--provider` → `--local` → config `provider` → inference from the
+model name (`claude-*` → anthropic, else openai). Built-ins: `openai`, `anthropic`, `local`.
+A company gateway is one config entry — `wire` says which protocol it speaks (a gateway can
+serve claude models over the OpenAI wire, or the Anthropic wire at a custom path):
+
+```jsonc
+{
+  "provider": "company",
+  "providers": {
+    "company": {
+      "wire": "anthropic",                     // or "openai"
+      "base_url": "https://llm-gw.corp.example/anthropic",
+      "api_key_env": "COMPANY_LLM_TOKEN",      // env var checked first; or "api_key": "..."
+      "auth": "bearer",                        // "x-api-key" (anthropic default) | "bearer"
+      "headers": { "x-corp-project": "sensei" },
+      "model": "claude-opus-5",                // optional per-provider model
+      "prompt_caching": true                   // anthropic wire: cache_control breakpoints (default on)
+    }
+  }
+}
+```
+
+`api_key: "none"` marks a keyless gateway (mTLS/VPN auth). On the anthropic wire, prompt
+caching is on by default — repeat agent rounds re-read the cached prefix at ~0.1× input price,
+and the cost line shows `(~Nk cached)`. `/provider` in the TUI lists/switches endpoints;
+`/model` follows the active provider.
 
 ## Interactive usage (Ink TUI)
 
 ```
-npm run dev -- [--local] [--model <name>] [--yolo] [--plan] [--continue [id]]
+npm run dev -- [--provider <name>] [--local] [--model <name>] [--yolo] [--plan] [--continue [id]]
 ```
 
 Streaming markdown answers, live tool-call lines, todo checklist, y/n/a/p permission prompts with diff previews, plan mode, composer history + tab-completion; Esc/Ctrl+C aborts the in-flight turn, Ctrl+D exits (saving the session). `/help` lists the slash commands: `/clear /compact /plan /style /color /model /config /mcp /permissions /skills /newskill /tasks /todos /cost /memory /init /investigate /resume /exit` — plus custom commands (`.sensei\commands\<name>.md`, `$ARGUMENTS` substituted) and direct skill invocation as `/<skillname>`.
@@ -85,7 +119,7 @@ See `examples/drive-spawn.mjs` (child-process driver with `--continue`) and `exa
 
 ## Config
 
-`~/.sensei/config.json` — model, local_model/local_base_url, max_output_tokens, stream, theme, save_sessions, context_char_budget, mcp_call_timeout, mcpServers, permissions.allow, hooks, prices, output_style, auto_verify, auto_continue, embed_model, accent. A project `.sensei.json` adds `mcpServers`, `permissions.allow`, and `hooks`.
+`~/.sensei/config.json` — model, provider, providers (see Providers above), local_model/local_base_url, max_output_tokens, stream, theme, save_sessions, context_char_budget, mcp_call_timeout, mcpServers, permissions.allow, hooks, prices, output_style, auto_verify, auto_continue, embed_model, accent. A project `.sensei.json` adds `mcpServers`, `permissions.allow`, and `hooks`.
 
 - **Allowlist rules**: `"permissions": {"allow": ["run_powershell(git *)", "mcp__github__*"]}` — matched tools skip the prompt.
 - **Hooks**: `"hooks": [{"event": "PreToolUse", "matcher": "run_powershell", "command": "..."}]` — runs in pwsh with a JSON payload on stdin; exit 2 on PreToolUse/UserPromptSubmit blocks. Events: PreToolUse, PostToolUse, UserPromptSubmit, Stop.

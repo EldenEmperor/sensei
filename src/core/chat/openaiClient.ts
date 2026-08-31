@@ -1,32 +1,19 @@
-// Chat-completions client on the openai npm package (baseURL-switchable for
-// Ollama). Custom 5-attempt retry with Retry-After, matching the PS variant;
-// SDK-internal retries are disabled so our policy is the only one.
+// Chat-completions client on the openai npm package. Provider-driven: the
+// ResolvedProvider supplies base URL (null = api.openai.com), key, and extra
+// headers — which also covers OpenAI-compatible company gateways and Ollama.
+// Custom 5-attempt retry with Retry-After (shared classifier); SDK-internal
+// retries are disabled so our policy is the only one.
 
-import OpenAI, { APIError, APIConnectionError } from 'openai';
+import OpenAI from 'openai';
 import { Agent as UndiciAgent, fetch as undiciFetch } from 'undici';
 import type { ChatClient } from './client.js';
 import type { ChatRequest, ChatResponse, ChatUsage, SenseiConfig, ToolCall } from '../types.js';
-import { getActiveModel, getApiKey } from '../config.js';
-
-const RETRY_STATUSES = new Set([429, 500, 502, 503]);
-const MAX_ATTEMPTS = 5;
+import { activeModel, type ResolvedProvider } from '../providers.js';
+import { classifyHttpError, MAX_ATTEMPTS, sleep } from './retry.js';
 
 // Node's default undici Agent caps headersTimeout at 300s — below our 600s
 // request timeout, which matters when a local model has to load first.
 const dispatcher = new UndiciAgent({ headersTimeout: 600_000, bodyTimeout: 600_000 });
-
-const sleep = (ms: number, signal?: AbortSignal) =>
-  new Promise<void>((resolve, reject) => {
-    const t = setTimeout(resolve, ms);
-    signal?.addEventListener(
-      'abort',
-      () => {
-        clearTimeout(t);
-        reject(new DOMException('aborted', 'AbortError'));
-      },
-      { once: true },
-    );
-  });
 
 export function stripThinkBlocks(text: string | null): string | null {
   if (!text) return text ?? null;
@@ -36,36 +23,32 @@ export function stripThinkBlocks(text: string | null): string | null {
 
 export class OpenAIChatClient implements ChatClient {
   private readonly config: SenseiConfig;
-  private readonly local: boolean;
+  private readonly provider: ResolvedProvider;
+  private readonly fetchImpl: typeof globalThis.fetch;
 
-  constructor(config: SenseiConfig, local: boolean) {
+  /** fetchImpl is the offline wire-level test seam. */
+  constructor(config: SenseiConfig, provider: ResolvedProvider, fetchImpl?: typeof globalThis.fetch) {
     this.config = config;
-    this.local = local;
+    this.provider = provider;
+    this.fetchImpl = fetchImpl ?? (undiciFetch as unknown as typeof globalThis.fetch);
   }
 
   private makeClient(): OpenAI {
-    if (this.local) {
-      // Ollama ignores auth, but the header must be present
-      return new OpenAI({
-        apiKey: 'ollama',
-        baseURL: String(this.config.local_base_url).replace(/\/+$/, ''),
-        maxRetries: 0,
-        timeout: 600_000,
-        fetch: undiciFetch as unknown as typeof globalThis.fetch,
-        fetchOptions: { dispatcher },
-      });
-    }
-    const key = getApiKey(this.config);
+    const p = this.provider;
+    let key = p.apiKey;
     if (!key) {
-      throw new Error(
-        'No OpenAI API key configured. Set OPENAI_API_KEY or delete ~/.sensei/config.json to rerun setup.',
-      );
+      if (p.noAuth) key = 'none'; // gateway with ambient auth; SDK requires a value
+      else {
+        throw new Error(`No API key for provider '${p.name}' — ${p.keyHint}, or use --local.`);
+      }
     }
     return new OpenAI({
       apiKey: key,
+      baseURL: p.baseUrl ?? undefined,
+      defaultHeaders: Object.keys(p.headers).length > 0 ? p.headers : undefined,
       maxRetries: 0,
       timeout: 600_000,
-      fetch: undiciFetch as unknown as typeof globalThis.fetch,
+      fetch: this.fetchImpl,
       fetchOptions: { dispatcher },
     });
   }
@@ -75,13 +58,15 @@ export class OpenAIChatClient implements ChatClient {
     opts: { signal?: AbortSignal; onDelta?: (text: string) => void; onNote?: (text: string) => void } = {},
   ): Promise<ChatResponse> {
     const client = this.makeClient();
-    const model = getActiveModel(this.config, this.local);
+    const model = activeModel(this.config, this.provider);
     const body: Record<string, unknown> = {
       model,
       messages: req.messages,
     };
-    if (this.local) body.max_tokens = Number(this.config.max_output_tokens);
-    else body.max_completion_tokens = Number(this.config.max_output_tokens);
+    // max_completion_tokens only against real api.openai.com — many
+    // OpenAI-compatible servers (Ollama, gateways) reject it.
+    if (this.provider.baseUrl === null) body.max_completion_tokens = Number(this.config.max_output_tokens);
+    else body.max_tokens = Number(this.config.max_output_tokens);
     if (req.toolSpecs.length > 0) body.tools = req.toolSpecs;
     const useStream = req.allowStream && Boolean(this.config.stream);
 
@@ -93,7 +78,13 @@ export class OpenAIChatClient implements ChatClient {
         if (opts.signal?.aborted || (e instanceof DOMException && e.name === 'AbortError')) {
           return { aborted: true };
         }
-        const { retryable, delaySec, message } = this.classifyError(e, attempt);
+        const { retryable, delaySec, message } = classifyHttpError(e, attempt, {
+          isLocal: this.provider.isLocal,
+          baseUrl: this.provider.baseUrl,
+          keyHint: this.provider.keyHint,
+          providerName: this.provider.name,
+          localModel: model,
+        });
         if (!retryable || attempt === MAX_ATTEMPTS) throw new Error(message);
         opts.onNote?.(`${message}; retrying in ${Math.round(delaySec)}s (${attempt}/${MAX_ATTEMPTS})…`);
         await sleep(delaySec * 1000, opts.signal);
@@ -101,40 +92,6 @@ export class OpenAIChatClient implements ChatClient {
     }
     /* unreachable */
     throw new Error('retry loop exhausted');
-  }
-
-  private classifyError(e: unknown, attempt: number): { retryable: boolean; delaySec: number; message: string } {
-    const backoff = Math.min(60, Math.pow(2, attempt)) + Math.random();
-    if (e instanceof APIConnectionError) {
-      if (this.local) {
-        return {
-          retryable: false,
-          delaySec: 0,
-          message:
-            `Couldn't reach Ollama at ${this.config.local_base_url}: ${e.message}\n` +
-            `Is Ollama running? Start the Ollama app (or 'ollama serve') and make sure '${getActiveModel(this.config, this.local)}' is pulled.`,
-        };
-      }
-      return { retryable: true, delaySec: backoff, message: `network error (${e.message})` };
-    }
-    if (e instanceof APIError) {
-      const status = e.status ?? 0;
-      if (RETRY_STATUSES.has(status)) {
-        const ra = e.headers?.get?.('retry-after');
-        const delaySec = ra && !Number.isNaN(Number(ra)) ? Number(ra) : backoff;
-        return { retryable: true, delaySec, message: `API returned ${status}` };
-      }
-      const errMsg = e.message ?? String(e);
-      if (status === 401) {
-        return {
-          retryable: false,
-          delaySec: 0,
-          message: `OpenAI rejected the API key (401): ${errMsg}\nFix OPENAI_API_KEY (or delete ~/.sensei/config.json to rerun setup).`,
-        };
-      }
-      return { retryable: false, delaySec: 0, message: `API error ${status}: ${errMsg}` };
-    }
-    return { retryable: false, delaySec: 0, message: (e as Error)?.message ?? String(e) };
   }
 
   private async completeOnce(
@@ -169,10 +126,12 @@ export class OpenAIChatClient implements ChatClient {
     body: Record<string, unknown>,
     opts: { signal?: AbortSignal; onDelta?: (text: string) => void },
   ): Promise<ChatResponse> {
-    const stream = (await client.chat.completions.create(
-      { ...body, stream: true, stream_options: { include_usage: true } } as never,
-      { signal: opts.signal },
-    )) as unknown as AsyncIterable<{
+    const streamBody: Record<string, unknown> = { ...body, stream: true };
+    // escape hatch for gateways that reject stream_options
+    if (this.provider.streamUsage) streamBody.stream_options = { include_usage: true };
+    const stream = (await client.chat.completions.create(streamBody as never, {
+      signal: opts.signal,
+    })) as unknown as AsyncIterable<{
       choices?: {
         delta?: { content?: string | null; tool_calls?: { index?: number; id?: string; function?: { name?: string; arguments?: string } }[] };
         finish_reason?: string | null;

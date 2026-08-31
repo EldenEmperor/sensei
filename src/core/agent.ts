@@ -4,8 +4,9 @@
 
 import fs from 'node:fs';
 import type { ChatClient } from './chat/client.js';
-import { OpenAIChatClient } from './chat/openaiClient.js';
+import { makeChatClient } from './chat/factory.js';
 import { ConfigStore, costLine, getActiveModel } from './config.js';
+import { resolveProvider, type ProviderOverrides, type ResolvedProvider } from './providers.js';
 import type { AgentEvent, AgentHost } from './events.js';
 import {
   getPrimaryArg,
@@ -42,6 +43,8 @@ export interface AgentOptions {
   host: AgentHost;
   permissionPolicy: PermissionPolicy;
   local?: boolean;
+  /** Provider name override (--provider); wins over `local`. */
+  provider?: string;
   planMode?: boolean;
   chatClient?: ChatClient;
   maxRounds?: number;
@@ -56,7 +59,8 @@ export class SenseiAgent {
   readonly store: ConfigStore;
   readonly registry: ToolRegistry;
   readonly host: AgentHost;
-  readonly local: boolean;
+  local: boolean;
+  provider: ResolvedProvider;
   planMode: boolean;
   policy: PermissionPolicy;
   chatClient: ChatClient;
@@ -64,6 +68,12 @@ export class SenseiAgent {
   todos: Todo[] = [];
   totalPromptTokens = 0;
   totalCompletionTokens = 0;
+  totalCacheReadTokens = 0;
+  totalCacheWriteTokens = 0;
+  /** Original CLI overrides, kept so provider re-resolution (e.g. after
+   *  /model changes the model family) applies the same precedence. */
+  private readonly providerOverrides: ProviderOverrides;
+  private readonly injectedChatClient: boolean;
   private readonly sessionAllowed = new Set<string>();
   private readonly maxRounds: number;
   private readonly _sessionId: string;
@@ -73,12 +83,15 @@ export class SenseiAgent {
   constructor(opts: AgentOptions) {
     this.store = opts.configStore;
     this.host = opts.host;
-    this.local = opts.local ?? false;
     this.planMode = opts.planMode ?? false;
     this.policy = opts.permissionPolicy;
     this.maxRounds = opts.maxRounds ?? MAX_TOOL_ROUNDS;
     this._sessionId = opts.sessionId ?? newSessionId();
-    this.chatClient = opts.chatClient ?? new OpenAIChatClient(this.store.config, this.local);
+    this.providerOverrides = { provider: opts.provider ?? null, local: opts.local ?? false };
+    this.provider = resolveProvider(this.store.config, this.providerOverrides);
+    this.local = this.provider.isLocal;
+    this.injectedChatClient = Boolean(opts.chatClient);
+    this.chatClient = opts.chatClient ?? makeChatClient(this.store.config, this.provider);
     this.registry = new ToolRegistry();
     registerFsTools(this.registry);
     registerSearchTools(this.registry);
@@ -124,7 +137,25 @@ export class SenseiAgent {
   }
 
   costLine(): { line: string; costUsd: number | null } {
-    return costLine(this.store.config, this.local, this.totalPromptTokens, this.totalCompletionTokens);
+    return costLine(
+      this.store.config,
+      this.provider,
+      this.totalPromptTokens,
+      this.totalCompletionTokens,
+      this.totalCacheReadTokens,
+      this.totalCacheWriteTokens,
+    );
+  }
+
+  /** Re-resolve the provider (same CLI precedence) and rebuild the chat
+   *  client — call after config.provider or the model family changes.
+   *  A test-injected chat client is never replaced. */
+  refreshProvider(): void {
+    this.provider = resolveProvider(this.store.config, this.providerOverrides);
+    this.local = this.provider.isLocal;
+    if (!this.injectedChatClient) {
+      this.chatClient = makeChatClient(this.store.config, this.provider);
+    }
   }
 
   /** @file references: inline small files, point big ones at the log tools. */
@@ -252,6 +283,8 @@ export class SenseiAgent {
       if (resp.usage) {
         this.totalPromptTokens += Number(resp.usage.prompt_tokens ?? 0);
         this.totalCompletionTokens += Number(resp.usage.completion_tokens ?? 0);
+        this.totalCacheReadTokens += Number(resp.usage.cache_read_input_tokens ?? 0);
+        this.totalCacheWriteTokens += Number(resp.usage.cache_creation_input_tokens ?? 0);
       }
 
       if (!toolCalls || toolCalls.length === 0) {
@@ -663,8 +696,9 @@ export class SenseiAgent {
       created: new Date().toISOString(),
       updated: new Date().toISOString(),
       cwd: this.store.cwd,
-      model: getActiveModel(this.store.config, this.local),
+      model: getActiveModel(this.store.config, this.provider),
       local: this.local,
+      provider: this.provider.name,
       messages: this.messages.filter((m) => m.role !== 'system'),
     };
     return saveSession(this.store.sessionDir, envelope);

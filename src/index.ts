@@ -3,9 +3,21 @@
 
 export { SenseiAgent, MAX_TOOL_ROUNDS, type AgentOptions } from './core/agent.js';
 export { ConfigStore, DEFAULT_CONFIG, costLine, getActiveModel, getApiKey } from './core/config.js';
+export {
+  activeModel,
+  listProviders,
+  preflightProvider,
+  resolveProvider,
+  setActiveModel,
+  type ProviderOverrides,
+  type ResolvedProvider,
+} from './core/providers.js';
 export type { AgentEvent, AgentHost } from './core/events.js';
 export type { ChatClient } from './core/chat/client.js';
 export { OpenAIChatClient } from './core/chat/openaiClient.js';
+export { AnthropicChatClient } from './core/chat/anthropicClient.js';
+export { makeChatClient } from './core/chat/factory.js';
+export { classifyHttpError, MAX_ATTEMPTS as CHAT_MAX_ATTEMPTS } from './core/chat/retry.js';
 export {
   findSession,
   loadSessionFile,

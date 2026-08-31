@@ -4,7 +4,8 @@
 
 import path from 'node:path';
 import { SenseiAgent } from '../core/agent.js';
-import { ConfigStore, getApiKey } from '../core/config.js';
+import { ConfigStore } from '../core/config.js';
+import { preflightProvider, resolveProvider, setActiveModel } from '../core/providers.js';
 import { INVESTIGATE_PROMPT } from '../core/prompts.js';
 import { findSession, loadSessionFile } from '../core/sessions.js';
 import { McpManager, mergedMcpServers } from '../mcp/client.js';
@@ -19,7 +20,13 @@ interface JsonResult {
   result: string | null;
   finish_reason: string | null;
   rounds: number;
-  usage: { prompt_tokens: number; completion_tokens: number; cost_usd: number | null };
+  usage: {
+    prompt_tokens: number;
+    completion_tokens: number;
+    cache_read_tokens: number;
+    cache_creation_tokens: number;
+    cost_usd: number | null;
+  };
   permission_denials: { tool: string; primary?: string }[];
   error: string | null;
 }
@@ -52,17 +59,16 @@ export async function main(argv: string[]): Promise<number> {
   const store = new ConfigStore();
   store.load((t) => process.stderr.write(t + '\n'));
   if (args.model) {
+    // written before provider resolution so model-name inference sees it
     if (args.local) store.config.local_model = args.model;
     else store.config.model = args.model;
   }
-  if (!args.local && !getApiKey(store.config)) {
-    process.stderr.write('sensei: no OpenAI API key found (set OPENAI_API_KEY, or use --local)\n');
-    return 1;
-  }
 
-  // resolve a session to continue/resume
+  // resolve a session to continue/resume (before provider resolution — the
+  // envelope's provider is adopted when no --provider/--local was given)
   let restoredMessages;
   let sessionId = args.sessionId;
+  let providerName = args.provider;
   if (args.continueSession || args.resume) {
     const file = findSession(
       store.sessionDir,
@@ -81,8 +87,23 @@ export async function main(argv: string[]): Promise<number> {
       const loaded = loadSessionFile(file);
       restoredMessages = loaded.messages;
       if (args.continueSession && !sessionId && loaded.id) sessionId = loaded.id;
+      if (!providerName && !args.local && loaded.provider) providerName = loaded.provider;
       process.stderr.write(`(resumed ${loaded.messages.length} messages from ${file})\n`);
     }
+  }
+
+  let resolved;
+  try {
+    resolved = resolveProvider(store.config, { provider: providerName, local: args.local });
+  } catch (e) {
+    process.stderr.write(`sensei: ${(e as Error).message}\n`);
+    return 2;
+  }
+  if (args.model) setActiveModel(store.config, resolved, args.model);
+  const preflightError = preflightProvider(resolved);
+  if (preflightError) {
+    process.stderr.write(`sensei: ${preflightError}\n`);
+    return 1;
   }
 
   // MCP servers (shared config with the PS variant)
@@ -110,6 +131,7 @@ export async function main(argv: string[]): Promise<number> {
       return await runTui({
         store,
         local: args.local,
+        provider: providerName,
         planMode: args.plan,
         policy: args.yolo ? { mode: 'yolo' } : { mode: 'interactive' },
         sessionId: sessionId ?? undefined,
@@ -133,6 +155,7 @@ export async function main(argv: string[]): Promise<number> {
     host,
     permissionPolicy: policy,
     local: args.local,
+    provider: providerName ?? undefined,
     planMode: args.plan,
     maxRounds: args.maxRounds ?? undefined,
     sessionId: sessionId ?? undefined,
@@ -173,6 +196,8 @@ export async function main(argv: string[]): Promise<number> {
       usage: {
         prompt_tokens: agent.totalPromptTokens,
         completion_tokens: agent.totalCompletionTokens,
+        cache_read_tokens: agent.totalCacheReadTokens,
+        cache_creation_tokens: agent.totalCacheWriteTokens,
         cost_usd: costUsd,
       },
       permission_denials: result?.permissionDenials ?? [],

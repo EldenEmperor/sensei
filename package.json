@@ -17,6 +17,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.122.0",
     "@modelcontextprotocol/sdk": "^1.30.0",
     "diff": "^9.0.0",
     "fast-glob": "^3.3.3",

@@ -14,6 +14,7 @@ export interface CliArgs {
   yolo: boolean;
   allow: string[];
   local: boolean;
+  provider: string | null;
   model: string | null;
   plan: boolean;
   maxRounds: number | null;
@@ -55,6 +56,7 @@ export function parseCliArgs(argv: string[]): CliArgs {
         yolo: { type: 'boolean' },
         allow: { type: 'string', multiple: true },
         local: { type: 'boolean' },
+        provider: { type: 'string' },
         model: { type: 'string' },
         plan: { type: 'boolean' },
         'max-rounds': { type: 'string' },
@@ -88,6 +90,7 @@ export function parseCliArgs(argv: string[]): CliArgs {
     yolo: Boolean(v.yolo),
     allow: (v.allow as string[] | undefined) ?? [],
     local: Boolean(v.local),
+    provider: (v.provider as string | undefined) ?? null,
     model: (v.model as string | undefined) ?? null,
     plan: Boolean(v.plan),
     maxRounds,
@@ -106,8 +109,9 @@ export const USAGE = `usage: sensei -p "prompt" [options]
   --resume <id>             load this saved session (id or file path) without adopting its id
   --yolo                    skip all tool permission checks
   --allow "tool(pattern)"   add an allowlist rule for this run (repeatable)
-  --local                   use the local Ollama endpoint instead of OpenAI
-  --model <name>            override the model for this run
+  --local                   use the local Ollama endpoint (alias for --provider local)
+  --provider <name>         endpoint to use: openai | anthropic | local | a "providers" entry from config
+  --model <name>            override the model for this run (claude-* infers --provider anthropic)
   --plan                    plan mode: read-only tools only
   --max-rounds <n>          cap model/tool rounds for the turn (default 40)
   --investigate <path>      deep-map a log file's structure (implies a built-in prompt; -p optional)

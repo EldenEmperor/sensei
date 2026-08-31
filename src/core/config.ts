@@ -6,6 +6,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import type { SenseiConfig } from './types.js';
+import { activeModel, type ResolvedProvider } from './providers.js';
 
 export const DEFAULT_CONFIG: SenseiConfig = {
   model: 'gpt-5.1',
@@ -44,7 +45,18 @@ export const MODEL_PRICES: Record<string, [number, number]> = {
   'gpt-5': [1.25, 10.0],
   'gpt-5-mini': [0.25, 2.0],
   'gpt-4o': [2.5, 10.0],
+  'claude-fable-5': [10.0, 50.0],
+  'claude-opus-5': [5.0, 25.0],
+  'claude-opus-4-8': [5.0, 25.0],
+  'claude-opus-4-7': [5.0, 25.0],
+  'claude-opus-4-6': [5.0, 25.0],
+  'claude-sonnet-5': [2.0, 10.0],
+  'claude-sonnet-4-6': [3.0, 15.0],
+  'claude-haiku-4-5': [1.0, 5.0],
 };
+
+// Anthropic prompt caching: multipliers on the input price
+export const CACHE_PRICE_FACTORS = { write: 1.25, read: 0.1 };
 
 export interface AllowRule {
   rule: string;
@@ -135,10 +147,15 @@ export class ConfigStore {
   }
 }
 
-export function getActiveModel(config: SenseiConfig, local: boolean): string {
-  return local ? String(config.local_model) : String(config.model);
+/** Legacy helper (boolean local) — provider-aware callers use activeModel()
+ *  from providers.ts. A ResolvedProvider is also accepted for convenience. */
+export function getActiveModel(config: SenseiConfig, localOrProvider: boolean | ResolvedProvider): string {
+  if (typeof localOrProvider === 'object') return activeModel(config, localOrProvider);
+  return localOrProvider ? String(config.local_model) : String(config.model);
 }
 
+/** Legacy OpenAI key resolution — kept for export compat; provider-aware
+ *  resolution lives in resolveProvider(). */
 export function getApiKey(config: SenseiConfig): string | null {
   if (process.env.OPENAI_API_KEY) return process.env.OPENAI_API_KEY;
   if (config.api_key) return String(config.api_key);
@@ -147,21 +164,33 @@ export function getApiKey(config: SenseiConfig): string | null {
 
 export function costLine(
   config: SenseiConfig,
-  local: boolean,
+  localOrProvider: boolean | ResolvedProvider,
   promptTokens: number,
   completionTokens: number,
+  cacheReadTokens = 0,
+  cacheWriteTokens = 0,
 ): { line: string; costUsd: number | null } {
-  const model = getActiveModel(config, local);
+  const model = getActiveModel(config, localOrProvider);
+  const isLocal = typeof localOrProvider === 'object' ? localOrProvider.isLocal : localOrProvider;
   const fmt = (n: number) =>
     (n / 1000).toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
   let line = `tokens ~${fmt(promptTokens)}k in / ${fmt(completionTokens)}k out | model ${model}`;
-  if (local) return { line: line + ' (local · $0)', costUsd: 0 };
+  if (cacheReadTokens > 0) line += ` (~${fmt(cacheReadTokens)}k cached)`;
+  if (isLocal) return { line: line + ' (local · $0)', costUsd: 0 };
   let p: [number, number] | null = null;
   const override = config.prices?.[model];
   if (Array.isArray(override) && override.length >= 2) p = [Number(override[0]), Number(override[1])];
   else if (MODEL_PRICES[model]) p = MODEL_PRICES[model];
   if (p) {
-    const cost = (promptTokens * p[0] + completionTokens * p[1]) / 1e6;
+    // Anthropic's input_tokens EXCLUDES cached tokens — cache read/write are
+    // billed separately at their factors; adding them to promptTokens first
+    // would double-count.
+    const cost =
+      (promptTokens * p[0] +
+        cacheWriteTokens * CACHE_PRICE_FACTORS.write * p[0] +
+        cacheReadTokens * CACHE_PRICE_FACTORS.read * p[0] +
+        completionTokens * p[1]) /
+      1e6;
     line += ' | ~$' + cost.toLocaleString('en-US', { minimumFractionDigits: 4, maximumFractionDigits: 4 });
     return { line, costUsd: cost };
   }

@@ -16,6 +16,8 @@ export interface SessionEnvelope {
   cwd: string;
   model: string;
   local: boolean;
+  /** Provider name active when saved (absent in pre-provider envelopes). */
+  provider?: string;
   messages: ChatMessage[];
 }
 
@@ -86,6 +88,8 @@ export function saveSession(sessionDir: string, envelope: SessionEnvelope): stri
 export interface LoadedSession {
   id: string | null;
   cwd: string | null;
+  /** Provider the session was saved under; legacy envelopes derive it from `local`. */
+  provider: string | null;
   messages: ChatMessage[];
   file: string;
 }
@@ -94,12 +98,13 @@ export interface LoadedSession {
 export function loadSessionFile(file: string): LoadedSession {
   const raw = JSON.parse(fs.readFileSync(file, 'utf8')) as unknown;
   if (Array.isArray(raw)) {
-    return { id: null, cwd: null, messages: validateTranscript(raw), file };
+    return { id: null, cwd: null, provider: null, messages: validateTranscript(raw), file };
   }
   const env = raw as Partial<SessionEnvelope>;
   return {
     id: env.id ?? null,
     cwd: env.cwd ?? null,
+    provider: env.provider ?? (env.local ? 'local' : null),
     messages: validateTranscript(Array.isArray(env.messages) ? env.messages : []),
     file,
   };

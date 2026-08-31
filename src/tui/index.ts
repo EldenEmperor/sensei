@@ -14,6 +14,7 @@ import { App, DeferredHost } from './App.js';
 export interface TuiOptions {
   store: ConfigStore;
   local: boolean;
+  provider?: string | null;
   planMode: boolean;
   policy: PermissionPolicy;
   sessionId?: string;
@@ -111,6 +112,7 @@ export async function runTui(opts: TuiOptions): Promise<number> {
     host,
     permissionPolicy: opts.policy,
     local: opts.local,
+    provider: opts.provider ?? undefined,
     planMode: opts.planMode,
     sessionId: opts.sessionId,
     restoredMessages: opts.restoredMessages,
