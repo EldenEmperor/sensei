@@ -1,18 +1,26 @@
-// MCP client on @modelcontextprotocol/sdk (stdio transport). Servers come from
-// "mcpServers" in ~/.sensei/config.json or .sensei.json; their tools register
-// as mcp__<server>__<tool>. Server stderr is drained to ~/.sensei/logs/.
+// MCP client on @modelcontextprotocol/sdk. Local servers spawn over stdio;
+// remote servers connect over streamable HTTP ("url" + optional "headers" —
+// which also serves corporate gateways). Servers come from "mcpServers" in
+// ~/.sensei/config.json or .sensei.json; their tools register as
+// mcp__<server>__<tool>. Local server stderr is drained to ~/.sensei/logs/.
 
 import fs from 'node:fs';
 import path from 'node:path';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import type { ConfigStore } from '../core/config.js';
 import type { ToolRegistry } from '../tools/registry.js';
 
 export interface McpServerConfig {
-  command: string;
+  /** Local stdio server: the command to spawn. */
+  command?: string;
   args?: string[];
   env?: Record<string, string>;
+  /** Remote server: streamable-HTTP endpoint (takes precedence over command). */
+  url?: string;
+  /** Extra headers for the remote endpoint (auth tokens etc.). */
+  headers?: Record<string, string>;
 }
 
 interface McpServerState {
@@ -79,20 +87,30 @@ export class McpManager {
     const logDir = path.join(this.configDir, 'logs');
     fs.mkdirSync(logDir, { recursive: true });
 
-    const env: Record<string, string> = {};
-    for (const [k, v] of Object.entries(process.env)) if (v !== undefined) env[k] = v;
-    for (const [k, v] of Object.entries(cfg.env ?? {})) env[k] = String(v);
+    let transport: StdioClientTransport | StreamableHTTPClientTransport;
+    if (cfg.url) {
+      transport = new StreamableHTTPClientTransport(new URL(String(cfg.url)), {
+        requestInit: cfg.headers ? { headers: cfg.headers } : undefined,
+      });
+    } else if (cfg.command) {
+      const env: Record<string, string> = {};
+      for (const [k, v] of Object.entries(process.env)) if (v !== undefined) env[k] = v;
+      for (const [k, v] of Object.entries(cfg.env ?? {})) env[k] = String(v);
 
-    const transport = new StdioClientTransport({
-      command: String(cfg.command),
-      args: (cfg.args ?? []).map(String),
-      env,
-      cwd: this.cwd,
-      stderr: 'pipe',
-    });
-    // stderr must be actively drained or a chatty server stalls on a full pipe
-    const logStream = fs.createWriteStream(this.logPath(name), { flags: 'a' });
-    transport.stderr?.pipe(logStream);
+      const stdio = new StdioClientTransport({
+        command: String(cfg.command),
+        args: (cfg.args ?? []).map(String),
+        env,
+        cwd: this.cwd,
+        stderr: 'pipe',
+      });
+      // stderr must be actively drained or a chatty server stalls on a full pipe
+      const logStream = fs.createWriteStream(this.logPath(name), { flags: 'a' });
+      stdio.stderr?.pipe(logStream);
+      transport = stdio;
+    } else {
+      throw new Error(`mcpServers.${name} needs either "command" (stdio) or "url" (streamable HTTP)`);
+    }
 
     const client = new Client({ name: 'sensei', version: '0.1.0' }, { capabilities: {} });
     await client.connect(transport);

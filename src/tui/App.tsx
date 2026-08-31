@@ -3,11 +3,13 @@
 // <Static>, while the dynamic bottom region holds the streaming answer,
 // spinner, todos, permission prompts, and the composer.
 
+import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { Box, Static, Text, useApp, useInput } from 'ink';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import type { SenseiAgent } from '../core/agent.js';
+import { buildCommandPrompt, findCustomCommand, listCustomCommands } from '../core/commands.js';
 import { getActiveModel, getMemory, OUTPUT_STYLES } from '../core/config.js';
 import { listProviders, resolveProvider, setActiveModel } from '../core/providers.js';
 import type { AgentEvent, AgentHost } from '../core/events.js';
@@ -18,6 +20,7 @@ import type { PermissionDecision, PermissionRequest, Todo } from '../core/types.
 import type { McpManager } from '../mcp/client.js';
 import { finishedTaskNotes, listBackgroundTasks } from '../tools/tasks.js';
 import { formatToolArgs } from '../cli/textOutput.js';
+import { getShell } from '../tools/platformShell.js';
 import { runShellCommand } from '../tools/shell.js';
 import {
   completeFileToken,
@@ -116,6 +119,7 @@ export function App({ agent, host, version, bannerFrames, sprites, mcp }: AppPro
   const [comp, setComp] = useState<ComposerState>(EMPTY_COMPOSER);
   const [tokens, setTokens] = useState<{ inTok: number; outTok: number }>({ inTok: 0, outTok: 0 });
   const [queuedCount, setQueuedCount] = useState(0);
+  const [statusOverride, setStatusOverride] = useState<string | null>(null);
   const queuedRef = useRef<string[]>([]);
   const verboseRef = useRef(false);
   const history = useRef<string[]>([]);
@@ -256,6 +260,52 @@ export function App({ agent, host, version, bannerFrames, sprites, mcp }: AppPro
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [theme]);
 
+  // custom statusline: config "statusline" names a command; it runs when a
+  // turn ends (and at start) with JSON context on stdin, and its first stdout
+  // line replaces the default status bar.
+  useEffect(() => {
+    const cmd = agent.store.config.statusline;
+    if (!cmd || typeof cmd !== 'string' || busy) return;
+    const shell = getShell().hookSpawn(cmd);
+    let done = false;
+    try {
+      const p = spawn(shell.exe, shell.args, { cwd: agent.store.cwd, windowsHide: true });
+      let out = '';
+      p.stdout.setEncoding('utf8');
+      p.stdout.on('data', (d: string) => (out += d));
+      const timer = setTimeout(() => {
+        done = true;
+        try {
+          p.kill();
+        } catch {
+          /* gone */
+        }
+      }, 5000);
+      p.on('close', () => {
+        clearTimeout(timer);
+        if (done) return;
+        const line = out.split('\n')[0]?.trim();
+        if (line) setStatusOverride(line);
+      });
+      p.on('error', () => clearTimeout(timer));
+      p.stdin.write(
+        JSON.stringify({
+          model: getActiveModel(agent.store.config, agent.provider),
+          provider: agent.provider.name,
+          cwd: agent.store.cwd,
+          session_id: agent.sessionId,
+          tokens: { in: agent.totalPromptTokens, out: agent.totalCompletionTokens },
+          plan_mode: agent.planMode,
+        }),
+        'utf8',
+      );
+      p.stdin.end();
+    } catch {
+      /* statusline is best-effort */
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [busy]);
+
   const doExit = (): void => {
     try {
       if (Boolean(agent.store.config.save_sessions) && agent.messages.length > 1) {
@@ -275,11 +325,11 @@ export function App({ agent, host, version, bannerFrames, sprites, mcp }: AppPro
     if (next !== undefined) submitText(next);
   };
 
-  const run = (prompt: string): void => {
+  const run = (prompt: string, extraAllowRules?: string[]): void => {
     setBusy(true);
     abortRef.current = new AbortController();
     void agent
-      .ask(prompt, { signal: abortRef.current.signal })
+      .ask(prompt, { signal: abortRef.current.signal, extraAllowRules })
       .catch((e: Error) => push(theme.err(`✗ ${protectTerminalText(e.message)}`)))
       .finally(() => {
         setBusy(false);
@@ -305,23 +355,20 @@ export function App({ agent, host, version, bannerFrames, sprites, mcp }: AppPro
       });
   };
 
-  const findCustomCommand = (name: string): string | null => {
-    for (const dir of [path.join(agent.store.cwd, '.sensei', 'commands'), path.join(agent.store.configDir, 'commands')]) {
-      const p = path.join(dir, `${name}.md`);
-      if (fs.existsSync(p) && fs.statSync(p).isFile()) return p;
-    }
-    return null;
-  };
-
   const handleSlash = (line: string): void => {
     const sp = line.indexOf(' ');
     const cmd = (sp < 0 ? line : line.slice(0, sp)).toLowerCase();
     const arg = sp < 0 ? '' : line.slice(sp + 1).trim();
     const t = theme;
     switch (cmd) {
-      case '/help':
+      case '/help': {
         for (const l of HELP_LINES) push(l);
+        const customs = listCustomCommands(agent.store.cwd, agent.store.configDir);
+        for (const c of customs) {
+          push(t.dim(`  /${c.name} ${c.argumentHint}`.trimEnd() + (c.description ? `  — ${c.description}` : '')));
+        }
         break;
+      }
       case '/clear':
         agent.clearConversation();
         push(t.dim('conversation cleared'));
@@ -567,11 +614,10 @@ export function App({ agent, host, version, bannerFrames, sprites, mcp }: AppPro
         break;
       default: {
         const name = cmd.replace(/^\//, '');
-        const file = findCustomCommand(name);
-        if (file) {
-          push(t.dim(`(custom command: ${file})`));
-          const prompt = fs.readFileSync(file, 'utf8').replace(/\$ARGUMENTS/g, arg);
-          run(prompt);
+        const custom = findCustomCommand(name, agent.store.cwd, agent.store.configDir);
+        if (custom) {
+          push(t.dim(`(custom command: ${custom.path})`));
+          run(buildCommandPrompt(custom, arg), custom.allowedTools.length > 0 ? custom.allowedTools : undefined);
           break;
         }
         const skill = getSkills(agent.store.cwd, agent.store.configDir).find(
@@ -836,7 +882,9 @@ export function App({ agent, host, version, bannerFrames, sprites, mcp }: AppPro
       )}
       <Text>
         {t.dim(
-          `  ${modelLabel} · ~${(tokens.inTok / 1000).toFixed(1)}k in / ${(tokens.outTok / 1000).toFixed(1)}k out${agent.planMode ? ' · PLAN' : ''}${queuedCount > 0 ? ` · ${queuedCount} queued` : ''}`,
+          statusOverride
+            ? `  ${protectTerminalText(statusOverride)}${queuedCount > 0 ? ` · ${queuedCount} queued` : ''}`
+            : `  ${modelLabel} · ~${(tokens.inTok / 1000).toFixed(1)}k in / ${(tokens.outTok / 1000).toFixed(1)}k out${agent.planMode ? ' · PLAN' : ''}${queuedCount > 0 ? ` · ${queuedCount} queued` : ''}`,
         )}
       </Text>
     </Box>

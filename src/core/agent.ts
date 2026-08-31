@@ -6,7 +6,8 @@ import fs from 'node:fs';
 import type { ChatClient } from './chat/client.js';
 import { makeChatClient } from './chat/factory.js';
 import { ConfigStore, costLine, getActiveModel } from './config.js';
-import { resolveProvider, type ProviderOverrides, type ResolvedProvider } from './providers.js';
+import { inferProviderFromModel, resolveProvider, type ProviderOverrides, type ResolvedProvider } from './providers.js';
+import { getAgentDefs } from './agents.js';
 import type { AgentEvent, AgentHost } from './events.js';
 import {
   acceptEditsAllows,
@@ -88,6 +89,8 @@ export class SenseiAgent {
   private sessionEnded = false;
   private readonly appendSystemPrompt?: string;
   private readonly additionalDirs: string[];
+  /** Allow rules granted only for the current turn (command allowed-tools). */
+  private turnAllowRules: string[] = [];
 
   constructor(opts: AgentOptions) {
     this.store = opts.configStore;
@@ -197,8 +200,13 @@ export class SenseiAgent {
     return appendix ? `${text}\n${appendix}` : text;
   }
 
-  async ask(prompt: string, opts: { signal?: AbortSignal; files?: string[] } = {}): Promise<TurnResult> {
+  async ask(
+    prompt: string,
+    opts: { signal?: AbortSignal; files?: string[]; extraAllowRules?: string[] } = {},
+  ): Promise<TurnResult> {
     registerSkillTool(this.registry, this.store.cwd, this.store.configDir); // cheap rescan: picks up skills created mid-session
+    this.registerTaskTool(); // rescan custom agent defs too
+    this.turnAllowRules = opts.extraAllowRules ?? [];
     const hookContext: string[] = [];
     if (!this.sessionStarted) {
       this.sessionStarted = true;
@@ -244,6 +252,7 @@ export class SenseiAgent {
       aborted: r.aborted,
       rounds: r.rounds,
     });
+    this.turnAllowRules = [];
     return result;
   }
 
@@ -255,7 +264,7 @@ export class SenseiAgent {
     maxRounds: number,
     depth: number,
     signal?: AbortSignal,
-    loopOpts: { excludeTools?: string[]; nonInteractive?: boolean } = {},
+    loopOpts: { excludeTools?: string[]; nonInteractive?: boolean; chatClient?: ChatClient } = {},
   ): Promise<Omit<TurnResult, 'permissionDenials'>> {
     const result: Omit<TurnResult, 'permissionDenials'> = {
       finalText: null,
@@ -268,7 +277,7 @@ export class SenseiAgent {
       result.rounds = round;
       let resp;
       try {
-        resp = await this.chatClient.chat(
+        resp = await (loopOpts.chatClient ?? this.chatClient).chat(
           {
             messages,
             toolSpecs: this.registry.getSpecs(loopOpts.excludeTools ?? []),
@@ -435,6 +444,7 @@ export class SenseiAgent {
     if (this.policy.mode === 'allowlist' && this.policy.extraRules) {
       for (const r of this.policy.extraRules) rules.push({ rule: r, source: 'cli' });
     }
+    for (const r of this.turnAllowRules) rules.push({ rule: r, source: 'cli' });
     if (matchesAllowlist(rules, name, primaryArg, args, this.store.cwd)) return true;
     // acceptEdits: file edits inside cwd (or an --add-dir) skip the prompt;
     // shell/web still ask
@@ -474,26 +484,58 @@ export class SenseiAgent {
 
   /** Run a subagent: fresh transcript with the subagent system prompt, same
    *  registry, depth 1 (no streaming, no nudge). */
+  /** Provider for a custom agent's model override: the session's explicit
+   *  provider if one was chosen, else inferred from the override model. */
+  private providerFor(model: string): ResolvedProvider {
+    const explicit = this.providerOverrides.provider || this.providerOverrides.local || this.store.config.provider;
+    const rp = explicit
+      ? resolveProvider(this.store.config, this.providerOverrides)
+      : resolveProvider(this.store.config, { provider: inferProviderFromModel(model) });
+    return { ...rp, modelOverride: model };
+  }
+
   async runSubagent(
     prompt: string,
-    opts: { maxRounds: number; excludeTools: string[]; nonInteractive?: boolean },
+    opts: {
+      maxRounds: number;
+      excludeTools: string[];
+      nonInteractive?: boolean;
+      /** Custom agent def: its body replaces the base system prompt. */
+      systemPrompt?: string;
+      /** Tool allowlist for this subagent; everything else is excluded. */
+      allowedTools?: string[];
+      /** Model override for this subagent (rides on the provider layer). */
+      model?: string;
+    },
   ): Promise<{ finalText: string | null; aborted: boolean; rounds: number }> {
-    const child: ChatMessage[] = [
-      {
-        role: 'system',
-        content: getSystemPrompt({
+    const sys = opts.systemPrompt
+      ? `${opts.systemPrompt}\n\nWorking directory: ${this.store.cwd}\n\n# Subagent mode\nYou are running as a subagent for a parent Sensei agent. Work autonomously: you cannot ask the user questions. Your FINAL message must be a complete, self-contained report of everything you found — it is the only thing the parent agent receives.`
+      : getSystemPrompt({
           cwd: this.store.cwd,
           configDir: this.store.configDir,
           subagent: true,
           planMode: this.planMode,
           styleDirective: this.store.styleDirective(),
-        }),
-      },
+        });
+    const exclude = [...opts.excludeTools];
+    if (opts.allowedTools) {
+      const allowed = new Set(opts.allowedTools.map((t) => t.toLowerCase()));
+      for (const n of this.registry.names()) {
+        if (!allowed.has(n.toLowerCase()) && !exclude.includes(n)) exclude.push(n);
+      }
+    }
+    let chatClient: ChatClient | undefined;
+    if (opts.model && !this.injectedChatClient) {
+      chatClient = makeChatClient(this.store.config, this.providerFor(opts.model));
+    }
+    const child: ChatMessage[] = [
+      { role: 'system', content: sys },
       { role: 'user', content: prompt },
     ];
     const r = await this.runLoop(child, opts.maxRounds, 1, this.currentSignal, {
-      excludeTools: opts.excludeTools,
+      excludeTools: exclude,
       nonInteractive: opts.nonInteractive,
+      chatClient,
     });
     await runHooks('SubagentStop', this.hooks(), this.hookCtx(), { lastMessage: r.finalText ?? '' });
     return { finalText: r.finalText, aborted: r.aborted, rounds: r.rounds };
@@ -506,25 +548,47 @@ export class SenseiAgent {
     await runHooks('SessionEnd', this.hooks(), this.hookCtx(), {});
   }
 
-  private registerSubagentTools(): void {
+  /** The task tool, rebuilt each turn so its description lists the current
+   *  custom agent defs (.sensei/agents/*.md), selectable via subagent_type. */
+  private registerTaskTool(): void {
+    const defs = getAgentDefs(this.store.cwd, this.store.configDir);
+    let description =
+      "Delegate a self-contained investigation to a subagent with its own fresh context. It can use every tool except task, works autonomously, and returns only its final report. Use for scoped side-work whose intermediate details you don't need.";
+    const properties: Record<string, unknown> = {
+      description: { type: 'string', description: '3-6 word summary shown to the user' },
+      prompt: { type: 'string', description: 'Complete, self-contained task instructions for the subagent' },
+    };
+    if (defs.length > 0) {
+      description +=
+        ' Custom agents (pass subagent_type to use one): ' +
+        defs.map((d) => `${d.name} — ${d.description || 'custom agent'}`).join('; ') +
+        '.';
+      properties.subagent_type = {
+        type: 'string',
+        description: `Optional custom agent to run as: ${defs.map((d) => d.name).join(', ')}`,
+      };
+    }
     this.registry.register({
       name: 'task',
       readOnly: true,
-      description:
-        "Delegate a self-contained investigation to a subagent with its own fresh context. It can use every tool except task, works autonomously, and returns only its final report. Use for scoped side-work whose intermediate details you don't need.",
-      parameters: {
-        type: 'object',
-        properties: {
-          description: { type: 'string', description: '3-6 word summary shown to the user' },
-          prompt: { type: 'string', description: 'Complete, self-contained task instructions for the subagent' },
-        },
-        required: ['description', 'prompt'],
-      },
+      description,
+      parameters: { type: 'object', properties, required: ['description', 'prompt'] },
       handler: async (a) => {
-        this.emit({ type: 'subagent-start', description: String(a.description ?? '') });
+        const type = a.subagent_type ? String(a.subagent_type) : '';
+        const def = type ? defs.find((d) => d.name.toLowerCase() === type.toLowerCase()) : undefined;
+        if (type && !def) {
+          return `ERROR: unknown subagent_type '${type}' — available: ${defs.map((d) => d.name).join(', ') || '(none)'}`;
+        }
+        this.emit({
+          type: 'subagent-start',
+          description: String(a.description ?? '') + (def ? ` [${def.name}]` : ''),
+        });
         const r = await this.runSubagent(String(a.prompt ?? ''), {
           maxRounds: 25,
           excludeTools: ['task', 'task_parallel', 'verify', 'exit_plan_mode'],
+          systemPrompt: def?.prompt,
+          allowedTools: def?.tools ?? undefined,
+          model: def?.model ?? undefined,
         });
         if (r.aborted) return 'ERROR: subagent aborted by user';
         if (!r.finalText) return 'ERROR: subagent returned no result';
@@ -532,6 +596,10 @@ export class SenseiAgent {
         return r.finalText;
       },
     });
+  }
+
+  private registerSubagentTools(): void {
+    this.registerTaskTool();
 
     this.registry.register({
       name: 'verify',

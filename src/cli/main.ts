@@ -5,6 +5,7 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { SenseiAgent } from '../core/agent.js';
+import { buildCommandPrompt, findCustomCommand } from '../core/commands.js';
 import { ConfigStore } from '../core/config.js';
 import { preflightProvider, resolveProvider, setActiveModel } from '../core/providers.js';
 import { INVESTIGATE_PROMPT } from '../core/prompts.js';
@@ -66,6 +67,20 @@ export async function main(argv: string[]): Promise<number> {
 
   const store = new ConfigStore();
   store.load((t) => process.stderr.write(t + '\n'));
+
+  // headless custom commands: -p "/mycmd args" (or positional/piped)
+  let extraAllowRules: string[] | undefined;
+  if (prompt?.startsWith('/')) {
+    const sp = prompt.search(/\s/);
+    const cname = (sp < 0 ? prompt : prompt.slice(0, sp)).slice(1);
+    const carg = sp < 0 ? '' : prompt.slice(sp + 1).trim();
+    const custom = findCustomCommand(cname, store.cwd, store.configDir);
+    if (custom) {
+      prompt = buildCommandPrompt(custom, carg);
+      if (custom.allowedTools.length > 0) extraAllowRules = custom.allowedTools;
+      process.stderr.write(`(custom command: ${custom.path})\n`);
+    }
+  }
 
   // effective permission mode: --permission-mode → --yolo/--plan aliases →
   // config permissions.defaultMode → default
@@ -192,7 +207,7 @@ export async function main(argv: string[]): Promise<number> {
   let result;
   let error: string | null = null;
   try {
-    result = await agent.ask(prompt!, { files: args.files });
+    result = await agent.ask(prompt!, { files: args.files, extraAllowRules });
   } catch (e) {
     error = (e as Error).message;
     result = null;

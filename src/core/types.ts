@@ -102,6 +102,9 @@ export interface SenseiConfig {
   auto_continue: boolean;
   embed_model: string;
   accent: string;
+  /** Optional command whose first stdout line replaces the TUI status bar
+   *  (runs at turn end with JSON context on stdin). */
+  statusline?: string | null;
   /** Unknown keys from config.json are preserved on save. */
   [key: string]: unknown;
 }
