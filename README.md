@@ -1,12 +1,12 @@
 # sensei
 
-A terminal AI agent for debugging logs — a Claude Code-style agent (TypeScript/Node + Ink) powered by the Anthropic API, the OpenAI API, a company LLM gateway, or a local Ollama model. Full agentic tooling (read/write/edit/glob/grep/run, subagents, background tasks, MCP servers, skills, hooks) plus a family of log-specific tools that let the model analyze huge log files without drowning in tokens — including `log_investigate`, which maps ANY unknown log format and teaches the other tools to read it.
+**Your custom problem solver + agent** — a Claude Code-style terminal agent (TypeScript/Node + Ink) powered by the Anthropic API, the OpenAI API, a company LLM gateway, or a local Ollama model. Full agentic tooling (read/write/edit/glob/grep/run, subagents, background tasks, MCP servers, skills, hooks) that you shape into *your* agent with custom commands, skills, subagents, and memory — plus a superpower: a family of log-analysis tools that dissect huge log files without drowning in tokens, including `log_investigate`, which maps ANY unknown log format and teaches the other tools to read it.
 
 ```
    ██          ██
     ██        ██
      ██      ██
-   ██████████████       sensei — log-debugging agent
+   ██████████████       sensei — your custom problem solver + agent
   ████████████████
   ████  ████  ████
   ████████████████

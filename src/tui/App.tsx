@@ -158,8 +158,8 @@ export function App({ agent, host, version, bannerFrames, sprites, mcp }: AppPro
       getActiveModel(agent.store.config, agent.provider) +
       (agent.local ? ' (local · ollama)' : ` (${agent.provider.name})`);
     return [
-      t.bold(t.accent('  sensei')) + t.dim(` v${version} · log-debugging agent · model: ${modelLabel}`),
-      t.dim('  ask about a log file, or /help for commands'),
+      t.bold(t.accent('  sensei')) + t.dim(` v${version} · your custom problem solver + agent · model: ${modelLabel}`),
+      t.dim('  ask anything (logs are my specialty) — /help for commands'),
       '',
     ];
   };

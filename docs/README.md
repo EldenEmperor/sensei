@@ -1,8 +1,8 @@
 # Sensei documentation
 
-Sensei is a Claude Code-style terminal AI agent (TypeScript/Node + Ink) specialized in
-debugging logs, powered by the Anthropic API, the OpenAI API, a company LLM gateway, or a
-local Ollama model.
+Sensei is **your custom problem solver + agent** — a Claude Code-style terminal AI agent
+(TypeScript/Node + Ink) with log-analysis superpowers, powered by the Anthropic API, the
+OpenAI API, a company LLM gateway, or a local Ollama model.
 
 | Guide | What it covers |
 |---|---|

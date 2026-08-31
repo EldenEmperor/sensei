@@ -34,7 +34,7 @@ describe('Ink App', () => {
     );
     await sleep(50);
     expect(lastFrame()).toContain('██ banner ██');
-    expect(lastFrame()).toContain('log-debugging agent');
+    expect(lastFrame()).toContain('your custom problem solver + agent');
     stdin.write('/help');
     await sleep(20);
     stdin.write('\r');

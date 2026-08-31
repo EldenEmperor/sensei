@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Sensei — terminal AI agent for log debugging (TypeScript variant)",
+  "description": "Sensei — your custom problem solver + agent (Claude Code-style terminal agent with log-analysis superpowers)",
   "bin": {
     "sensei": "./dist/cli/main.js"
   },
