@@ -6,7 +6,9 @@ tests/app.log
 tests/app.log.answers.json
 
 # personal / temp files, not part of the project
+# (sensei skills live in .sensei/skills/ — the root skills/ folder is personal)
 get_hardware_specs.ps1
 get_largest_files.ps1
 youtube_audio/
+skills/
 *.mp3
