@@ -16,6 +16,7 @@ shows the effective result with keys masked.
 | Key | Default | Meaning |
 |---|---|---|
 | `model` | `"gpt-5.1"` | active model for cloud providers (`claude-*` infers the Anthropic provider) |
+| `mode` | `"code"` | system-prompt doctrine: `code` (coding-first) or `logs` (log-debugging-first); `/mode` or `--mode` switches |
 | `provider` | *(absent)* | active provider name; absent = infer from the model ([Providers](providers.md)) |
 | `providers` | *(absent)* | named endpoint definitions — wire, base_url, api_key_env, auth, headers, model, prompt_caching, stream_usage |
 | `api_key` | `null` | literal key fallback for the built-in openai/anthropic providers (env vars win) |

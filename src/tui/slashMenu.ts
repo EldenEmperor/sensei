@@ -41,6 +41,12 @@ export const BUILTIN_COMMANDS: SlashItem[] = [
     'When the plan is presented: [y] approve & execute · [a] approve + auto-accept',
     'file edits for this session · [n]/Esc keep planning.',
   ]),
+  b('mode', '[code|logs]', 'system-prompt doctrine: coding (default) or log debugging', [
+    'code — coding doctrine leads: read-before-write, minimal diffs matching the',
+    'surrounding conventions, risk-proportional verification (run the checks!).',
+    'logs — log-first doctrine leads: log_stats first, hunt the first anomaly in time.',
+    'All tools stay available in both modes; a name sets and persists.',
+  ]),
   b('style', '[name]', 'response style: default|concise|explanatory|teaching', [
     'No argument shows the current style; a name sets it and persists to config.',
   ]),

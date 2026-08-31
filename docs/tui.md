@@ -52,6 +52,7 @@ Frequently used:
 | Command | Purpose |
 |---|---|
 | `/model [name]`, `/provider [name]` | show/switch the model and endpoint (persists) |
+| `/mode [code\|logs]` | which doctrine leads the system prompt — coding (default) or log-first (persists) |
 | `/permissions` | list allow/deny rules with sources |
 | `/mcp` | MCP server status and tools |
 | `/cost` | token totals, cached-prefix reads, estimated $ |

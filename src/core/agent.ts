@@ -137,6 +137,7 @@ export class SenseiAgent {
     return getSystemPrompt({
       cwd: this.store.cwd,
       configDir: this.store.configDir,
+      mode: this.store.config.mode === 'logs' ? 'logs' : 'code',
       planMode: this.planMode,
       styleDirective: this.store.styleDirective(),
       appendSystem: this.appendSystemPrompt,
@@ -513,6 +514,7 @@ export class SenseiAgent {
       : getSystemPrompt({
           cwd: this.store.cwd,
           configDir: this.store.configDir,
+          mode: this.store.config.mode === 'logs' ? 'logs' : 'code',
           subagent: true,
           planMode: this.planMode,
           styleDirective: this.store.styleDirective(),

@@ -158,7 +158,10 @@ export function App({ agent, host, version, bannerFrames, sprites, mcp }: AppPro
       getActiveModel(agent.store.config, agent.provider) +
       (agent.local ? ' (local · ollama)' : ` (${agent.provider.name})`);
     return [
-      t.bold(t.accent('  sensei')) + t.dim(` v${version} · your custom problem solver + agent · model: ${modelLabel}`),
+      t.bold(t.accent('  sensei')) +
+        t.dim(
+          ` v${version} · your custom problem solver + agent · model: ${modelLabel}${agent.store.config.mode === 'logs' ? ' · logs mode' : ''}`,
+        ),
       t.dim('  ask anything (logs are my specialty) — /help for commands'),
       '',
     ];
@@ -423,6 +426,21 @@ export function App({ agent, host, version, bannerFrames, sprites, mcp }: AppPro
         }
         agent.setPlanMode(!agent.planMode);
         push(t.dim(agent.planMode ? 'plan mode ON — read-only until you approve a plan' : 'plan mode OFF'));
+        break;
+      }
+      case '/mode': {
+        if (!arg) {
+          push(t.dim(`mode: ${agent.store.config.mode} (available: code|logs)`));
+          break;
+        }
+        if (arg !== 'code' && arg !== 'logs') {
+          push(t.err(`unknown mode '${arg}' (code|logs)`));
+          break;
+        }
+        agent.store.config.mode = arg;
+        agent.store.save();
+        agent.setPlanMode(agent.planMode); // re-seed the system prompt for the new mode
+        push(t.dim(`mode set to ${arg} — ${arg === 'code' ? 'coding doctrine leads the prompt' : 'log-first doctrine leads the prompt'}`));
         break;
       }
       case '/style': {

@@ -1,6 +1,6 @@
 # sensei
 
-**Your custom problem solver + agent** — a Claude Code-style terminal agent (TypeScript/Node + Ink) powered by the Anthropic API, the OpenAI API, a company LLM gateway, or a local Ollama model. Full agentic tooling (read/write/edit/glob/grep/run, subagents, background tasks, MCP servers, skills, hooks) that you shape into *your* agent with custom commands, skills, subagents, and memory — plus a superpower: a family of log-analysis tools that dissect huge log files without drowning in tokens, including `log_investigate`, which maps ANY unknown log format and teaches the other tools to read it.
+**Your custom problem solver + agent** — a Claude Code-style terminal agent (TypeScript/Node + Ink) powered by the Anthropic API, the OpenAI API, a company LLM gateway, or a local Ollama model. Full agentic tooling (read/write/edit/glob/grep/run, subagents, background tasks, MCP servers, skills, hooks) that you shape into *your* agent with custom commands, skills, subagents, and memory. It starts in **code mode** (coding-first doctrine: read before writing, minimal diffs, verify with your project's checks) and carries a superpower either way: a family of log-analysis tools that dissect huge log files without drowning in tokens — `/mode logs` puts that method in charge, and `log_investigate` maps ANY unknown log format and teaches the other tools to read it.
 
 ```
    ██          ██

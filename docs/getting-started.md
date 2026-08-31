@@ -78,10 +78,15 @@ Then just ask: *"the service crashed around 02:47 — what happened?"* Sensei ca
 `log_slice`/`grep`, and cites evidence as `path:line`. Attach a file to any prompt with
 `@app.log` (Tab completes paths).
 
+Sensei starts in **code mode** — a coding-first doctrine (read before writing, minimal
+diffs matching your conventions, verify with the project's own checks). For dedicated log
+work, `/mode logs` (or `--mode logs`) puts the log-first method in charge; the log tools
+are available either way.
+
 Useful first commands:
 
 - `/help` — every command, key binding, and custom command; `/<command> --help` for details
-- `/model`, `/provider` — what you're talking to
+- `/model`, `/provider`, `/mode` — what you're talking to, and which doctrine leads
 - `/plan fix the parser` — plan mode: read-only research first, then an approval prompt
 - `/init` — sensei explores the directory and writes a `SENSEI.md` memory file for future
   sessions

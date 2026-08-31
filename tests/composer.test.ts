@@ -109,4 +109,10 @@ describe('new CLI arg forms', () => {
     expect(parseCliArgs(['-p', 'x', '--permission-mode', 'acceptEdits']).permissionMode).toBe('acceptEdits');
     expect(() => parseCliArgs(['-p', 'x', '--permission-mode', 'wild'])).toThrow(UsageError);
   });
+
+  it('--mode validates code|logs', () => {
+    expect(parseCliArgs(['-p', 'x', '--mode', 'logs']).mode).toBe('logs');
+    expect(parseCliArgs(['-p', 'x']).mode).toBeNull();
+    expect(() => parseCliArgs(['-p', 'x', '--mode', 'wild'])).toThrow(UsageError);
+  });
 });

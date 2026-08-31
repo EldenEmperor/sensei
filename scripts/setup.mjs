@@ -60,6 +60,11 @@ async function interactiveConfig() {
   };
 
   try {
+    say('\n--- Mode ---');
+    const mode = (await ask('Primary use — coding or log debugging? (code|logs)', 'code')).toLowerCase();
+    mergeConfig({ mode: mode === 'logs' ? 'logs' : 'code' });
+    ok(`mode: ${mode === 'logs' ? 'logs' : 'code'} (switch anytime with /mode)`);
+
     say('\n--- Provider setup (writes ~/.sensei/config.json; Ctrl+C to stop) ---');
     say('  1) anthropic  — Claude models via ANTHROPIC_API_KEY');
     say('  2) openai     — GPT models via OPENAI_API_KEY');

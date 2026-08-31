@@ -46,6 +46,9 @@ describe('every builtin command dispatches', () => {
     // command → substring the frame must contain after running it
     const table: [string, string][] = [
       ['/help', '/clear'],
+      ['/mode', 'mode: code'],
+      ['/mode logs', 'mode set to logs'],
+      ['/mode code', 'mode set to code'],
       ['/style', 'style: default'],
       ['/style concise', 'style set to concise'],
       ['/color', 'accent: indigo'],

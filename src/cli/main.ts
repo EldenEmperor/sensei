@@ -101,6 +101,7 @@ export async function main(argv: string[]): Promise<number> {
     if (args.local) store.config.local_model = args.model;
     else store.config.model = args.model;
   }
+  if (args.mode) store.config.mode = args.mode; // run-scoped, like --model
 
   // resolve a session to continue/resume (before provider resolution — the
   // envelope's provider is adopted when no --provider/--local was given)

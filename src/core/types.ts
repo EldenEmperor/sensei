@@ -81,6 +81,8 @@ export interface ProviderEntry {
 export interface SenseiConfig {
   model: string;
   api_key: string | null;
+  /** System-prompt doctrine: 'code' (default) or 'logs'. */
+  mode: string;
   /** Active provider name; null/absent = infer from the model name. */
   provider?: string | null;
   /** Named endpoint definitions; merge over built-ins openai/anthropic/local. */

@@ -49,6 +49,39 @@ describe('getShell', () => {
   });
 });
 
+describe('modes', () => {
+  const base = { cwd: 'X', configDir: 'Y' };
+
+  it('code is the default: coding method leads, log tools stay pointed at', () => {
+    const p = getSystemPrompt({ ...base, platform: 'win32' });
+    expect(p).toContain('software engineering and problem-solving');
+    expect(p).toContain('smallest change that solves the actual problem');
+    expect(p).toContain('Prefer editing existing files');
+    expect(p).toContain('never claim success while something is red');
+    expect(p).toContain('# Log analysis'); // the superpower pointer survives
+    expect(p).not.toContain('Hunt for the FIRST anomaly'); // log doctrine not leading
+  });
+
+  it('logs mode preserves the original log-first doctrine', () => {
+    const p = getSystemPrompt({ ...base, mode: 'logs', platform: 'win32' });
+    expect(p).toContain('specialized in debugging logs');
+    expect(p).toContain('call log_stats FIRST');
+    expect(p).toContain('Hunt for the FIRST anomaly');
+    expect(p).not.toContain('smallest change that solves the actual problem');
+  });
+
+  it('both modes keep the shared platform-aware sections', () => {
+    for (const mode of ['code', 'logs'] as const) {
+      const win = getSystemPrompt({ ...base, mode, platform: 'win32' });
+      expect(win).toContain('winget');
+      expect(win).toContain('# Task management');
+      const linux = getSystemPrompt({ ...base, mode, platform: 'linux' });
+      expect(linux).toContain('sudo');
+      expect(linux).not.toContain('winget');
+    }
+  });
+});
+
 describe('platform-aware prompts', () => {
   const base = { cwd: 'X', configDir: 'Y' };
 

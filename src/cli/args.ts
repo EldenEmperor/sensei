@@ -17,6 +17,7 @@ export interface CliArgs {
   local: boolean;
   provider: string | null;
   model: string | null;
+  mode: 'code' | 'logs' | null;
   plan: boolean;
   maxRounds: number | null;
   investigate: string | null;
@@ -62,6 +63,7 @@ export function parseCliArgs(argv: string[]): CliArgs {
         local: { type: 'boolean' },
         provider: { type: 'string' },
         model: { type: 'string' },
+        mode: { type: 'string' },
         plan: { type: 'boolean' },
         'max-rounds': { type: 'string' },
         investigate: { type: 'string' },
@@ -78,6 +80,10 @@ export function parseCliArgs(argv: string[]): CliArgs {
   const format = String(v['output-format'] ?? 'text');
   if (!['text', 'json', 'stream-json'].includes(format)) {
     throw new UsageError(`unknown --output-format '${format}' (text|json|stream-json)`);
+  }
+  const mode = (v.mode as string | undefined) ?? null;
+  if (mode !== null && !['code', 'logs'].includes(mode)) {
+    throw new UsageError(`unknown --mode '${mode}' (code|logs)`);
   }
   const pm = (v['permission-mode'] as string | undefined) ?? null;
   if (pm !== null && !['default', 'acceptEdits', 'plan', 'yolo'].includes(pm)) {
@@ -109,6 +115,7 @@ export function parseCliArgs(argv: string[]): CliArgs {
     local: Boolean(v.local),
     provider: (v.provider as string | undefined) ?? null,
     model: (v.model as string | undefined) ?? null,
+    mode: mode as CliArgs['mode'],
     plan: Boolean(v.plan),
     maxRounds,
     investigate: (v.investigate as string | undefined) ?? null,
@@ -134,6 +141,7 @@ export const USAGE = `usage: sensei ["prompt"] [options]
   --local                   use the local Ollama endpoint (alias for --provider local)
   --provider <name>         endpoint to use: openai | anthropic | local | a "providers" entry from config
   --model <name>            override the model for this run (claude-* infers --provider anthropic)
+  --mode <code|logs>        system-prompt doctrine for this run: coding (default) or log debugging
   --plan                    plan mode: read-only tools only
   --max-rounds <n>          cap model/tool rounds for the turn (default 40)
   --investigate <path>      deep-map a log file's structure (implies a built-in prompt; -p optional)

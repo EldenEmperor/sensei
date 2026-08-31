@@ -11,6 +11,7 @@ import { activeModel, type ResolvedProvider } from './providers.js';
 export const DEFAULT_CONFIG: SenseiConfig = {
   model: 'gpt-5.1',
   api_key: null,
+  mode: 'code',
   local_model: 'qwen3:14b',
   local_base_url: 'http://localhost:11434/v1',
   max_output_tokens: 8192,
