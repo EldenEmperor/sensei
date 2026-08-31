@@ -126,15 +126,17 @@ export function isPathInside(child: string, parent: string, platform: NodeJS.Pla
   return rel === '' || (!rel.startsWith('..') && !P.isAbsolute(rel));
 }
 
-/** acceptEdits: auto-allow file-edit tools whose resolved target is inside cwd. */
+/** acceptEdits: auto-allow file-edit tools whose resolved target is inside
+ *  `boundary` (default cwd; --add-dir passes extra boundaries). */
 export function acceptEditsAllows(
   name: string,
   primaryArg: string | undefined,
   args: Record<string, unknown>,
   cwd: string,
   platform: NodeJS.Platform = process.platform,
+  boundary: string = cwd,
 ): boolean {
   if (!EDIT_TOOLS.includes(name)) return false;
   const { resolved } = getPrimaryArg(primaryArg, args, cwd);
-  return resolved ? isPathInside(resolved, cwd, platform) : false;
+  return resolved ? isPathInside(resolved, boundary, platform) : false;
 }

@@ -10,6 +10,8 @@ export interface PromptOptions {
   subagent?: boolean;
   planMode?: boolean;
   styleDirective?: string;
+  /** Extra instructions appended after the base prompt (--append-system-prompt). */
+  appendSystem?: string | null;
   /** Override for tests; defaults to the running platform. */
   platform?: NodeJS.Platform;
 }
@@ -90,6 +92,9 @@ You are in plan mode: read-only tools only. Do NOT edit files or run commands th
   }
   if (opts.styleDirective) {
     base += `\n\n# Response style\n${opts.styleDirective}`;
+  }
+  if (opts.appendSystem) {
+    base += `\n\n# Additional instructions\n${opts.appendSystem}`;
   }
   let mem = '';
   for (const m of getMemory(opts.configDir, opts.cwd)) {

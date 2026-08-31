@@ -66,12 +66,14 @@ and the cost line shows `(~Nk cached)`. `/provider` in the TUI lists/switches en
 npm run dev -- [--provider <name>] [--local] [--model <name>] [--yolo] [--plan] [--continue [id]]
 ```
 
-Streaming markdown answers, live tool-call lines, todo checklist, y/n/a/p permission prompts with diff previews, plan mode, composer history + tab-completion; Esc/Ctrl+C aborts the in-flight turn, Ctrl+D exits (saving the session). `/help` lists the slash commands: `/clear /compact /plan /style /color /model /config /mcp /permissions /skills /newskill /tasks /todos /cost /memory /init /investigate /resume /exit` — plus custom commands (`.sensei\commands\<name>.md`, `$ARGUMENTS` substituted) and direct skill invocation as `/<skillname>`.
+Streaming markdown answers, live tool-call lines, todo checklist, y/n/a/p permission prompts with diff previews, plan mode; Esc/Ctrl+C aborts the in-flight turn, Ctrl+D exits (saving the session). The composer has full cursor editing (←/→, Ctrl+A/E home/end, Ctrl+W/U word/line delete, Alt+←/→ words), multiline input (`\` then Enter), paste handling, history (↑/↓), Tab completion for /commands and `@file` paths, `!cmd` to run a shell command directly, Ctrl+O to toggle verbose tool output — and typing while sensei is busy queues the message for the next turn. `/help` lists the slash commands: `/clear /compact /plan /style /color /model /config /mcp /permissions /skills /newskill /tasks /todos /cost /memory /init /investigate /resume /exit` — plus custom commands (`.sensei\commands\<name>.md`, `$ARGUMENTS` substituted) and direct skill invocation as `/<skillname>`.
 
 ## Headless usage
 
 ```
 npx tsx src/cli/main.ts -p "why did the 02:47 crash happen?" --file tests\app.log --local --yolo
+sensei "why did the 02:47 crash happen?"        # bare positional prompt
+git log --oneline -20 | sensei "what shipped this week?"   # or pipe the prompt/context on stdin
 ```
 
 - `--output-format json` — one machine-readable object on stdout (`session_id`, `result`, `usage`, `permission_denials`, `error`); progress on stderr. `stream-json` emits NDJSON agent events.

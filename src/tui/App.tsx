@@ -18,6 +18,14 @@ import type { PermissionDecision, PermissionRequest, Todo } from '../core/types.
 import type { McpManager } from '../mcp/client.js';
 import { finishedTaskNotes, listBackgroundTasks } from '../tools/tasks.js';
 import { formatToolArgs } from '../cli/textOutput.js';
+import { runShellCommand } from '../tools/shell.js';
+import {
+  completeFileToken,
+  composerReduce,
+  continuationOnEnter,
+  EMPTY_COMPOSER,
+  type ComposerState,
+} from './composer.js';
 import { renderDiffPreview } from './diff.js';
 import { renderMarkdown } from './markdown.js';
 import { ACCENT_PRESETS, makeTheme, protectTerminalText, resolveAccent, type Theme } from './theme.js';
@@ -90,6 +98,8 @@ const HELP_LINES = [
   '  /resume [n|id]   list recent sessions / continue one',
   '  /exit            quit (also /quit, or Ctrl+D)',
   '  custom commands: .sensei\\commands\\<name>.md ($ARGUMENTS substituted)',
+  '  keys: !cmd runs in the shell directly · @path Tab-completes files · \\ then Enter = new line',
+  '        typing while busy queues the message · Ctrl+O verbose tool output · Ctrl+A/E/W/U edit',
 ];
 
 export function App({ agent, host, version, bannerFrames, sprites, mcp }: AppProps): React.ReactElement {
@@ -103,8 +113,11 @@ export function App({ agent, host, version, bannerFrames, sprites, mcp }: AppPro
   const [frame, setFrame] = useState(0);
   const [permReq, setPermReq] = useState<{ req: PermissionRequest; resolve: (d: PermissionDecision) => void } | null>(null);
   const [planReq, setPlanReq] = useState<{ plan: string; resolve: (ok: boolean) => void } | null>(null);
-  const [input, setInput] = useState('');
+  const [comp, setComp] = useState<ComposerState>(EMPTY_COMPOSER);
   const [tokens, setTokens] = useState<{ inTok: number; outTok: number }>({ inTok: 0, outTok: 0 });
+  const [queuedCount, setQueuedCount] = useState(0);
+  const queuedRef = useRef<string[]>([]);
+  const verboseRef = useRef(false);
   const history = useRef<string[]>([]);
   const historyIdx = useRef(-1);
   const resumeList = useRef<string[]>([]);
@@ -209,6 +222,12 @@ export function App({ agent, host, version, bannerFrames, sprites, mcp }: AppPro
             break;
           case 'tool-end':
             setActiveTool(null);
+            if (verboseRef.current && e.result) {
+              const lines = e.result.split('\n');
+              const shown = lines.slice(0, 30);
+              for (const l of shown) push(theme.dim('  │ ' + protectTerminalText(l)));
+              if (lines.length > shown.length) push(theme.dim(`  │ … ${lines.length - shown.length} more lines`));
+            }
             break;
           case 'note':
             push(theme.dim(protectTerminalText(e.text)));
@@ -249,6 +268,13 @@ export function App({ agent, host, version, bannerFrames, sprites, mcp }: AppPro
     exit();
   };
 
+  // a queued message (typed while busy) submits as soon as the turn ends
+  const drainQueue = (): void => {
+    const next = queuedRef.current.shift();
+    setQueuedCount(queuedRef.current.length);
+    if (next !== undefined) submitText(next);
+  };
+
   const run = (prompt: string): void => {
     setBusy(true);
     abortRef.current = new AbortController();
@@ -261,6 +287,21 @@ export function App({ agent, host, version, bannerFrames, sprites, mcp }: AppPro
         streamRef.current = '';
         setStreamText('');
         for (const n of finishedTaskNotes()) push(theme.dim(n));
+        drainQueue();
+      });
+  };
+
+  // ! prefix: run the command in the platform shell directly, no model turn
+  const runBang = (cmd: string): void => {
+    setBusy(true);
+    void runShellCommand(cmd, agent.store.cwd, 120)
+      .then((out) => {
+        for (const l of out.split('\n').slice(0, 200)) push(theme.dim(protectTerminalText(l)));
+      })
+      .catch((e: Error) => push(theme.err(`✗ ${protectTerminalText(e.message)}`)))
+      .finally(() => {
+        setBusy(false);
+        drainQueue();
       });
   };
 
@@ -547,15 +588,26 @@ export function App({ agent, host, version, bannerFrames, sprites, mcp }: AppPro
     }
   };
 
+  const submitText = (line: string): void => {
+    push(theme.accent('❯ ') + protectTerminalText(line));
+    if (line.startsWith('!')) runBang(line.slice(1).trim());
+    else if (line.startsWith('/')) handleSlash(line);
+    else run(line);
+  };
+
   const submit = (): void => {
-    const line = input.trim();
-    setInput('');
+    const line = comp.text.trim();
+    setComp(EMPTY_COMPOSER);
     historyIdx.current = -1;
     if (!line) return;
     history.current.push(line);
-    push(theme.accent('❯ ') + protectTerminalText(line));
-    if (line.startsWith('/')) handleSlash(line);
-    else run(line);
+    if (busy) {
+      queuedRef.current.push(line);
+      setQueuedCount(queuedRef.current.length);
+      push(theme.dim(`(queued: ${protectTerminalText(line.split('\n')[0]).slice(0, 60)})`));
+      return;
+    }
+    submitText(line);
   };
 
   useInput((ch, key) => {
@@ -579,23 +631,32 @@ export function App({ agent, host, version, bannerFrames, sprites, mcp }: AppPro
       r.resolve(ch.toLowerCase() === 'y');
       return;
     }
-    if (busy) {
-      if (key.escape || (key.ctrl && ch === 'c')) abortRef.current?.abort();
+    if (busy && (key.escape || (key.ctrl && ch === 'c'))) {
+      abortRef.current?.abort();
       return;
     }
-    if (key.ctrl && (ch === 'c' || ch === 'd')) {
+    if (!busy && key.ctrl && (ch === 'c' || ch === 'd')) {
       doExit();
       return;
     }
+    // editing works while busy too — Enter then queues the message
     if (key.return) {
-      submit();
+      const cont = continuationOnEnter(comp);
+      if (cont) setComp(cont); // trailing backslash → newline
+      else submit();
+      return;
+    }
+    if (key.ctrl && ch === 'o') {
+      verboseRef.current = !verboseRef.current;
+      push(theme.dim(`(verbose tool output ${verboseRef.current ? 'on' : 'off'})`));
       return;
     }
     if (key.upArrow) {
+      if (comp.text.includes('\n')) return; // multiline: arrows stay editing
       if (history.current.length === 0) return;
       if (historyIdx.current < 0) historyIdx.current = history.current.length;
       historyIdx.current = Math.max(0, historyIdx.current - 1);
-      setInput(history.current[historyIdx.current] ?? '');
+      setComp({ text: history.current[historyIdx.current] ?? '', cursor: (history.current[historyIdx.current] ?? '').length });
       return;
     }
     if (key.downArrow) {
@@ -603,26 +664,63 @@ export function App({ agent, host, version, bannerFrames, sprites, mcp }: AppPro
       historyIdx.current++;
       if (historyIdx.current >= history.current.length) {
         historyIdx.current = -1;
-        setInput('');
+        setComp(EMPTY_COMPOSER);
       } else {
-        setInput(history.current[historyIdx.current] ?? '');
+        const t = history.current[historyIdx.current] ?? '';
+        setComp({ text: t, cursor: t.length });
       }
       return;
     }
+    if (key.leftArrow) {
+      setComp((s) => composerReduce(s, { type: key.meta || key.ctrl ? 'wordLeft' : 'left' }));
+      return;
+    }
+    if (key.rightArrow) {
+      setComp((s) => composerReduce(s, { type: key.meta || key.ctrl ? 'wordRight' : 'right' }));
+      return;
+    }
+    if (key.ctrl && ch === 'a') {
+      setComp((s) => composerReduce(s, { type: 'home' }));
+      return;
+    }
+    if (key.ctrl && ch === 'e') {
+      setComp((s) => composerReduce(s, { type: 'end' }));
+      return;
+    }
+    if (key.ctrl && ch === 'w') {
+      setComp((s) => composerReduce(s, { type: 'deleteWordBack' }));
+      return;
+    }
+    if (key.ctrl && ch === 'u') {
+      setComp((s) => composerReduce(s, { type: 'killToStart' }));
+      return;
+    }
     if (key.tab) {
-      if (input.startsWith('/')) {
-        const partial = input.slice(1).toLowerCase();
+      if (comp.text.startsWith('/')) {
+        const partial = comp.text.slice(1).toLowerCase();
         const all = HELP_LINES.map((l) => l.trim().split(/\s+/)[0]).filter((c) => c.startsWith('/'));
         const match = all.find((c) => c.slice(1).startsWith(partial));
-        if (match) setInput(match + ' ');
+        if (match) setComp({ text: match + ' ', cursor: match.length + 1 });
+        return;
+      }
+      // @file completion against the working directory
+      const r = completeFileToken(comp, (dir) =>
+        fs
+          .readdirSync(path.resolve(agent.store.cwd, dir), { withFileTypes: true })
+          .map((e) => e.name + (e.isDirectory() ? '/' : '')),
+      );
+      if (r) {
+        setComp(r.state);
+        if (r.candidates) push(theme.dim('  ' + r.candidates.join('  ')));
       }
       return;
     }
     if (key.backspace || key.delete) {
-      setInput((v) => v.slice(0, -1));
+      // most terminals send Backspace as \x7f, which ink reports as `delete`
+      setComp((s) => composerReduce(s, { type: 'backspace' }));
       return;
     }
-    if (ch && !key.ctrl && !key.meta) setInput((v) => v + ch);
+    if (ch && !key.ctrl && !key.meta) setComp((s) => composerReduce(s, { type: 'insert', text: ch }));
   });
 
   // dynamic region -----------------------------------------------------------
@@ -706,14 +804,39 @@ export function App({ agent, host, version, bannerFrames, sprites, mcp }: AppPro
           <Text>{renderMarkdown(planReq.plan, t)}</Text>
           <Text>{t.dim('  Approve this plan and let Sensei execute it? [y/N]')}</Text>
         </Box>
-      ) : !busy ? (
-        <Text>
-          {t.accent('sensei ❯ ') + protectTerminalText(input) + t.dim('▌')}
-        </Text>
-      ) : null}
+      ) : (
+        <Box flexDirection="column">
+          {(() => {
+            const lines = comp.text.split('\n');
+            let acc = 0;
+            let cLine = lines.length - 1;
+            let cCol = lines[lines.length - 1].length;
+            for (let i = 0; i < lines.length; i++) {
+              if (comp.cursor <= acc + lines[i].length) {
+                cLine = i;
+                cCol = comp.cursor - acc;
+                break;
+              }
+              acc += lines[i].length + 1;
+            }
+            return lines.map((l, i) => {
+              const prefix = i === 0 ? t.accent(busy ? 'sensei ⋯ ' : 'sensei ❯ ') : t.dim('     … ');
+              if (i !== cLine) return <Text key={i}>{prefix + protectTerminalText(l)}</Text>;
+              const at = cCol < l.length ? l[cCol] : ' ';
+              return (
+                <Text key={i}>
+                  {prefix + protectTerminalText(l.slice(0, cCol))}
+                  <Text inverse>{protectTerminalText(at)}</Text>
+                  {protectTerminalText(cCol < l.length ? l.slice(cCol + 1) : '')}
+                </Text>
+              );
+            });
+          })()}
+        </Box>
+      )}
       <Text>
         {t.dim(
-          `  ${modelLabel} · ~${(tokens.inTok / 1000).toFixed(1)}k in / ${(tokens.outTok / 1000).toFixed(1)}k out${agent.planMode ? ' · PLAN' : ''}`,
+          `  ${modelLabel} · ~${(tokens.inTok / 1000).toFixed(1)}k in / ${(tokens.outTok / 1000).toFixed(1)}k out${agent.planMode ? ' · PLAN' : ''}${queuedCount > 0 ? ` · ${queuedCount} queued` : ''}`,
         )}
       </Text>
     </Box>

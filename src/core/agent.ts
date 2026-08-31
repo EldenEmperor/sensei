@@ -54,6 +54,10 @@ export interface AgentOptions {
   restoredMessages?: ChatMessage[];
   /** Connected MCP manager; its tools register as mcp__<server>__<tool>. */
   mcp?: McpManager;
+  /** Extra instructions appended to the system prompt (--append-system-prompt). */
+  appendSystemPrompt?: string;
+  /** Extra directories acceptEdits may auto-allow edits in (--add-dir). */
+  additionalDirs?: string[];
 }
 
 export class SenseiAgent {
@@ -82,6 +86,8 @@ export class SenseiAgent {
   private currentSignal?: AbortSignal;
   private sessionStarted = false;
   private sessionEnded = false;
+  private readonly appendSystemPrompt?: string;
+  private readonly additionalDirs: string[];
 
   constructor(opts: AgentOptions) {
     this.store = opts.configStore;
@@ -90,6 +96,8 @@ export class SenseiAgent {
     this.policy = opts.permissionPolicy;
     this.maxRounds = opts.maxRounds ?? MAX_TOOL_ROUNDS;
     this._sessionId = opts.sessionId ?? newSessionId();
+    this.appendSystemPrompt = opts.appendSystemPrompt;
+    this.additionalDirs = opts.additionalDirs ?? [];
     this.providerOverrides = { provider: opts.provider ?? null, local: opts.local ?? false };
     this.provider = resolveProvider(this.store.config, this.providerOverrides);
     this.local = this.provider.isLocal;
@@ -128,6 +136,7 @@ export class SenseiAgent {
       configDir: this.store.configDir,
       planMode: this.planMode,
       styleDirective: this.store.styleDirective(),
+      appendSystem: this.appendSystemPrompt,
     });
   }
 
@@ -427,8 +436,12 @@ export class SenseiAgent {
       for (const r of this.policy.extraRules) rules.push({ rule: r, source: 'cli' });
     }
     if (matchesAllowlist(rules, name, primaryArg, args, this.store.cwd)) return true;
-    // acceptEdits: file edits inside cwd skip the prompt; shell/web still ask
-    if (this.policy.acceptEdits && acceptEditsAllows(name, primaryArg, args, this.store.cwd)) {
+    // acceptEdits: file edits inside cwd (or an --add-dir) skip the prompt;
+    // shell/web still ask
+    if (
+      this.policy.acceptEdits &&
+      [this.store.cwd, ...this.additionalDirs].some((d) => acceptEditsAllows(name, primaryArg, args, this.store.cwd, process.platform, d))
+    ) {
       return true;
     }
 

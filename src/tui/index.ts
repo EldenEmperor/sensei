@@ -21,6 +21,8 @@ export interface TuiOptions {
   restoredMessages?: ChatMessage[];
   version?: string;
   mcp?: McpManager;
+  appendSystemPrompt?: string;
+  additionalDirs?: string[];
 }
 
 export interface BannerFrame {
@@ -117,6 +119,8 @@ export async function runTui(opts: TuiOptions): Promise<number> {
     sessionId: opts.sessionId,
     restoredMessages: opts.restoredMessages,
     mcp: opts.mcp,
+    appendSystemPrompt: opts.appendSystemPrompt,
+    additionalDirs: opts.additionalDirs,
   });
   const instance = render(
     React.createElement(App, {

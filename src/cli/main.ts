@@ -51,9 +51,16 @@ export async function main(argv: string[]): Promise<number> {
   if (args.investigate && !prompt) {
     prompt = INVESTIGATE_PROMPT.replace('<PATH>', path.resolve(args.investigate));
   }
+  if (!process.stdin.isTTY) {
+    // piped input: alone it is the prompt; with a prompt it becomes context
+    const chunks: Buffer[] = [];
+    for await (const c of process.stdin) chunks.push(c as Buffer);
+    const piped = Buffer.concat(chunks).toString('utf8').trim();
+    if (piped) prompt = prompt ? `${prompt}\n\n--- piped input ---\n${piped}` : piped;
+  }
   const interactive = !prompt && process.stdout.isTTY && process.stdin.isTTY;
   if (!prompt && !interactive) {
-    process.stderr.write('sensei: -p <prompt> is required when not attached to a terminal\n');
+    process.stderr.write('sensei: give a prompt (-p, a bare argument, or piped stdin) when not attached to a terminal\n');
     return 2;
   }
 
@@ -153,6 +160,8 @@ export async function main(argv: string[]): Promise<number> {
         restoredMessages,
         version: '0.1.0',
         mcp,
+        appendSystemPrompt: args.appendSystemPrompt ?? undefined,
+        additionalDirs: args.addDirs.map((d) => path.resolve(d)),
       });
     } finally {
       stopAllBackgroundTasks();
@@ -176,6 +185,8 @@ export async function main(argv: string[]): Promise<number> {
     sessionId: sessionId ?? undefined,
     restoredMessages,
     mcp,
+    appendSystemPrompt: args.appendSystemPrompt ?? undefined,
+    additionalDirs: args.addDirs.map((d) => path.resolve(d)),
   });
 
   let result;

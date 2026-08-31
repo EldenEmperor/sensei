@@ -20,6 +20,8 @@ export interface CliArgs {
   plan: boolean;
   maxRounds: number | null;
   investigate: string | null;
+  appendSystemPrompt: string | null;
+  addDirs: string[];
   help: boolean;
 }
 
@@ -47,7 +49,7 @@ export function parseCliArgs(argv: string[]): CliArgs {
   try {
     parsed = parseArgs({
       args: pre,
-      allowPositionals: false,
+      allowPositionals: true,
       options: {
         print: { type: 'string', short: 'p' },
         file: { type: 'string', multiple: true },
@@ -63,6 +65,8 @@ export function parseCliArgs(argv: string[]): CliArgs {
         plan: { type: 'boolean' },
         'max-rounds': { type: 'string' },
         investigate: { type: 'string' },
+        'append-system-prompt': { type: 'string' },
+        'add-dir': { type: 'string', multiple: true },
         help: { type: 'boolean', short: 'h' },
       },
     });
@@ -85,8 +89,14 @@ export function parseCliArgs(argv: string[]): CliArgs {
     if (!Number.isInteger(maxRounds) || maxRounds < 1) throw new UsageError('--max-rounds must be a positive integer');
   }
 
+  // a bare positional is the prompt (like `sensei "fix the bug"`)
+  const positional = parsed.positionals.length > 0 ? parsed.positionals.join(' ') : null;
+  if (parsed.positionals.length > 0 && v.print !== undefined) {
+    throw new UsageError('give the prompt either as -p or as a positional argument, not both');
+  }
+
   return {
-    print: (v.print as string | undefined) ?? null,
+    print: (v.print as string | undefined) ?? positional,
     files: (v.file as string[] | undefined) ?? [],
     outputFormat: format as CliArgs['outputFormat'],
     continueSession,
@@ -102,13 +112,16 @@ export function parseCliArgs(argv: string[]): CliArgs {
     plan: Boolean(v.plan),
     maxRounds,
     investigate: (v.investigate as string | undefined) ?? null,
+    appendSystemPrompt: (v['append-system-prompt'] as string | undefined) ?? null,
+    addDirs: (v['add-dir'] as string[] | undefined) ?? [],
     help: Boolean(v.help),
   };
 }
 
-export const USAGE = `usage: sensei -p "prompt" [options]
+export const USAGE = `usage: sensei ["prompt"] [options]
 
-  -p, --print <prompt>      run one prompt non-interactively (required in this build; TUI arrives later)
+  -p, --print <prompt>      run one prompt non-interactively (or pass the prompt as a bare
+                            argument, or pipe it on stdin)
   --file <path>             attach a file to the prompt (repeatable; big files are pointed at the log tools)
   --output-format <f>       text (default) | json (single result object) | stream-json (NDJSON events)
   --continue [id]           continue a saved session — latest for this directory, or the given id
@@ -124,4 +137,6 @@ export const USAGE = `usage: sensei -p "prompt" [options]
   --plan                    plan mode: read-only tools only
   --max-rounds <n>          cap model/tool rounds for the turn (default 40)
   --investigate <path>      deep-map a log file's structure (implies a built-in prompt; -p optional)
+  --append-system-prompt <text>  append extra instructions to the system prompt
+  --add-dir <path>          extra directory acceptEdits may auto-allow edits in (repeatable)
 `;
