@@ -67,6 +67,15 @@ export function classifyHttpError(
       const delaySec = ra && !Number.isNaN(Number(ra)) ? Number(ra) : backoff;
       return { retryable: true, delaySec, message: `API returned ${status}` };
     }
+    if (ctx.isLocal && status === 404) {
+      return {
+        retryable: false,
+        delaySec: 0,
+        message:
+          `Ollama doesn't have the model '${ctx.localModel ?? '?'}' (404).\n` +
+          `Install it with: ollama pull ${ctx.localModel ?? '<model>'}   — or pick an installed one with /model list.`,
+      };
+    }
     if (status === 401) {
       return {
         retryable: false,

@@ -76,10 +76,12 @@ export const BUILTIN_COMMANDS: SlashItem[] = [
   b('color', '[name|hex]', 'accent color: indigo|jade|gold|teal|red or #RRGGBB', [
     'Persists to config; takes full effect on restart.',
   ]),
-  b('model', '[name]', 'show or set the model (setting persists to config)', [
-    'Writes to the active provider\'s model key in ~/.sensei/config.json.',
+  b('model', '[name|list]', 'show or set the model (setting persists to config)', [
+    '/model            show the active model',
+    '/model list       installed Ollama models (local) or known model names (cloud)',
+    '/model <name>     set it — writes the active provider\'s model key in config.',
     'A claude-* name switches the inferred provider to anthropic (and vice versa).',
-    'Example: /model claude-opus-5',
+    'On local, setting a model Ollama does not have warns immediately.',
   ]),
   b('provider', '[name]', 'show or switch the API provider (openai|anthropic|local|custom)', [
     'No argument lists configured providers with wire protocol, endpoint, and key status.',

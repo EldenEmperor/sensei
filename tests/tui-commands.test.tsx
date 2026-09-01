@@ -59,6 +59,8 @@ describe('every builtin command dispatches', () => {
       ['/color', 'accent: indigo'],
       ['/color jade', 'accent set to jade'],
       ['/model', 'model: gpt-5.1'],
+      ['/model show', 'model: gpt-5.1'], // show displays, never sets
+      ['/model list', 'claude-opus-5'], // cloud provider: known model names
       ['/provider', '/provider <name> switches'],
       ['/config', '"output_style"'],
       ['/permissions', 'no allow/deny rules'],

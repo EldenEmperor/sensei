@@ -10,7 +10,7 @@ import { Box, Static, Text, useApp, useInput, useStdout } from 'ink';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import type { SenseiAgent } from '../core/agent.js';
 import { buildCommandPrompt, findCustomCommand, listCustomCommands } from '../core/commands.js';
-import { getActiveModel, getMemory, OUTPUT_STYLES } from '../core/config.js';
+import { getActiveModel, getMemory, MODEL_PRICES, OUTPUT_STYLES } from '../core/config.js';
 import { listProviders, resolveProvider, setActiveModel } from '../core/providers.js';
 import type { AgentEvent, AgentHost, PlanApprovalDecision } from '../core/events.js';
 import { INIT_PROMPT, INVESTIGATE_PROMPT, NEW_AGENT_PROMPT, NEW_SKILL_PROMPT } from '../core/prompts.js';
@@ -395,6 +395,18 @@ export function App({ agent, host, version, bannerFrames, sprites, mcp }: AppPro
       });
   };
 
+  // list what the local Ollama actually has (best-effort, short timeout)
+  const fetchOllamaModels = async (): Promise<string[] | null> => {
+    try {
+      const base = String(agent.store.config.local_base_url).replace(/\/v1\/?$/, '');
+      const r = await fetch(`${base}/api/tags`, { signal: AbortSignal.timeout(3000) });
+      const j = (await r.json()) as { models?: { name?: string }[] };
+      return (j.models ?? []).map((m) => String(m.name ?? '')).filter(Boolean);
+    } catch {
+      return null;
+    }
+  };
+
   const handleSlash = (line: string): void => {
     const sp = line.indexOf(' ');
     const cmd = (sp < 0 ? line : line.slice(0, sp)).toLowerCase();
@@ -585,14 +597,38 @@ export function App({ agent, host, version, bannerFrames, sprites, mcp }: AppPro
         break;
       }
       case '/model': {
-        if (!arg) {
-          push(t.dim(`model: ${getActiveModel(agent.store.config, agent.provider)} (provider: ${agent.provider.name})`));
+        if (!arg || arg === 'show') {
+          push(t.dim(`model: ${getActiveModel(agent.store.config, agent.provider)} (provider: ${agent.provider.name}) — /model list shows options`));
+          break;
+        }
+        if (arg === 'list') {
+          if (agent.local) {
+            void fetchOllamaModels().then((models) => {
+              if (models === null) push(t.err(`couldn't reach Ollama at ${agent.store.config.local_base_url}`));
+              else if (models.length === 0) push(t.dim('no models installed — ollama pull <name>'));
+              else {
+                push(t.dim('installed Ollama models:'));
+                for (const m of models) push(t.dim(`  ${m}${m.replace(/:latest$/, '') === getActiveModel(agent.store.config, agent.provider) || m === getActiveModel(agent.store.config, agent.provider) ? '  (active)' : ''}`));
+              }
+            });
+          } else {
+            push(t.dim('known models (any provider model name is accepted):'));
+            for (const m of Object.keys(MODEL_PRICES)) push(t.dim(`  ${m}`));
+          }
           break;
         }
         setActiveModel(agent.store.config, agent.provider, arg);
         agent.store.save();
         agent.refreshProvider(); // model family may change the inferred provider
         push(t.dim(`model set to ${arg} (provider: ${agent.provider.name})`));
+        if (agent.local) {
+          // best-effort: warn right away if Ollama doesn't have it
+          void fetchOllamaModels().then((models) => {
+            if (models && !models.some((m) => m === arg || m.replace(/:latest$/, '') === arg)) {
+              push(t.err(`'${arg}' is not installed in Ollama — run: ollama pull ${arg}   (/model list shows installed)`));
+            }
+          });
+        }
         break;
       }
       case '/provider': {

@@ -195,6 +195,20 @@ describe('shared retry classifier', () => {
     expect(local.message).toContain('qwen3:14b');
   });
 
+  it('local 404 explains the missing Ollama model instead of a bare API error', () => {
+    const r = classifyHttpError({ status: 404, message: "404 model 'foo' not found" }, 1, {
+      ...ctx,
+      isLocal: true,
+      baseUrl: 'http://localhost:11434/v1',
+      localModel: 'foo',
+    });
+    expect(r.retryable).toBe(false);
+    expect(r.message).toContain('ollama pull foo');
+    expect(r.message).toContain('/model list');
+    // cloud 404 keeps the generic message
+    expect(classifyHttpError({ status: 404, message: 'x' }, 1, ctx).message).toContain('API error 404');
+  });
+
   it('unknown errors are fatal with their message', () => {
     const r = classifyHttpError(new Error('weird'), 1, ctx);
     expect(r.retryable).toBe(false);
