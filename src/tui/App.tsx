@@ -13,7 +13,7 @@ import { buildCommandPrompt, findCustomCommand, listCustomCommands } from '../co
 import { getActiveModel, getMemory, MODEL_PRICES, OUTPUT_STYLES } from '../core/config.js';
 import { listProviders, resolveProvider, setActiveModel } from '../core/providers.js';
 import type { AgentEvent, AgentHost, PlanApprovalDecision } from '../core/events.js';
-import { INIT_PROMPT, INVESTIGATE_PROMPT, NEW_AGENT_PROMPT, NEW_SKILL_PROMPT } from '../core/prompts.js';
+import { DESIGN_PROMPT, INIT_PROMPT, INVESTIGATE_PROMPT, NEW_AGENT_PROMPT, NEW_SKILL_PROMPT } from '../core/prompts.js';
 import { getAgentDefs } from '../core/agents.js';
 import { loadSessionFile } from '../core/sessions.js';
 import { transcriptCharCount } from '../core/transcript.js';
@@ -31,11 +31,16 @@ import { formatToolArgs } from '../cli/textOutput.js';
 import { getShell } from '../tools/platformShell.js';
 import { runShellCommand } from '../tools/shell.js';
 import {
+  collapsePaste,
   completeFileToken,
   composerReduce,
   continuationOnEnter,
   EMPTY_COMPOSER,
+  expandPastes,
+  isPasteChunk,
+  newPasteStore,
   type ComposerState,
+  type LastPaste,
 } from './composer.js';
 import { renderDiffPreview } from './diff.js';
 import { renderMarkdown } from './markdown.js';
@@ -122,6 +127,8 @@ export function App({ agent, host, version, bannerFrames, sprites, mcp }: AppPro
   const [statusOverride, setStatusOverride] = useState<string | null>(null);
   const queuedRef = useRef<string[]>([]);
   const verboseRef = useRef(false);
+  const pasteStoreRef = useRef(newPasteStore());
+  const lastPasteRef = useRef<LastPaste | null>(null);
   const history = useRef<string[]>([]);
   const historyIdx = useRef(-1);
   const resumeList = useRef<string[]>([]);
@@ -467,6 +474,24 @@ export function App({ agent, host, version, bannerFrames, sprites, mcp }: AppPro
         }
         agent.setPlanMode(!agent.planMode);
         push(t.dim(agent.planMode ? 'plan mode ON — read-only until you approve a plan' : 'plan mode OFF'));
+        break;
+      }
+      case '/design': {
+        if (!arg) {
+          push(t.dim('usage: /design <what> — e.g. /design a pricing page for a dev tool'));
+          break;
+        }
+        const slug =
+          arg
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, '-')
+            .replace(/^-+|-+$/g, '')
+            .slice(0, 40) || 'design';
+        const dir = path.join(agent.store.cwd, '.sensei', 'designs');
+        let file = path.join(dir, `${slug}.html`);
+        for (let n = 2; fs.existsSync(file); n++) file = path.join(dir, `${slug}-${n}.html`);
+        push(t.dim(`(designing → ${file})`));
+        run(DESIGN_PROMPT.replace(/<WHAT>/g, arg).replace(/<FILE>/g, file));
         break;
       }
       case '/also': {
@@ -875,8 +900,9 @@ export function App({ agent, host, version, bannerFrames, sprites, mcp }: AppPro
   };
 
   const submit = (): void => {
-    const line = comp.text.trim();
+    const line = expandPastes(comp.text, pasteStoreRef.current).trim();
     setComp(EMPTY_COMPOSER);
+    lastPasteRef.current = null;
     historyIdx.current = -1;
     if (!line) return;
     submitLine(line);
@@ -1103,7 +1129,18 @@ export function App({ agent, host, version, bannerFrames, sprites, mcp }: AppPro
       setComp((s) => composerReduce(s, { type: 'backspace' }));
       return;
     }
-    if (ch && !key.ctrl && !key.meta) setComp((s) => composerReduce(s, { type: 'insert', text: ch }));
+    if (ch && !key.ctrl && !key.meta) {
+      if (isPasteChunk(ch)) {
+        // big pastes collapse to a chip; the full text returns at submit
+        setComp((s) => {
+          const r = collapsePaste(s, ch, pasteStoreRef.current, Date.now(), lastPasteRef.current);
+          lastPasteRef.current = r.last;
+          return r.state;
+        });
+        return;
+      }
+      setComp((s) => composerReduce(s, { type: 'insert', text: ch }));
+    }
   });
 
   // dynamic region -----------------------------------------------------------

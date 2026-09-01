@@ -322,6 +322,46 @@ describe('Ink App', () => {
     expect(agent.messages.some((m) => String(m.content).includes('SIDE REPORT: readme is fine'))).toBe(true);
   });
 
+  it('big pastes collapse to a chip and expand into the submitted prompt', async () => {
+    const fake = new FakeChatClient();
+    fake.enqueue(stopResponse('got it'));
+    const { agent, host } = makeTuiAgent(fake);
+    const { lastFrame, stdin } = render(
+      React.createElement(App, { agent, host, version: 'test', bannerFrames: [] }),
+    );
+    await sleep(50);
+    const blob = Array.from({ length: 12 }, (_, i) => `log line number ${i} with some detail`).join('\n');
+    stdin.write('explain this: ');
+    await sleep(20);
+    stdin.write(blob); // one large chunk → paste
+    await sleep(30);
+    const frame = lastFrame()!;
+    expect(frame).toContain('[pasted #1 +12 lines]');
+    expect(frame).not.toContain('log line number 5');
+    stdin.write('\r');
+    await sleep(200);
+    const userMsg = agent.messages.find((m) => m.role === 'user');
+    expect(userMsg?.content).toContain('explain this:');
+    expect(userMsg?.content).toContain('log line number 5 with some detail');
+    expect(userMsg?.content).not.toContain('[pasted #1');
+  });
+
+  it('/design builds the prompt with the target file path', async () => {
+    const fake = new FakeChatClient();
+    fake.enqueue(stopResponse('designed'));
+    const { agent, host } = makeTuiAgent(fake);
+    const { stdin } = render(React.createElement(App, { agent, host, version: 'test', bannerFrames: [] }));
+    await sleep(50);
+    stdin.write('/design a Pricing Page!');
+    await sleep(20);
+    stdin.write('\r');
+    await sleep(200);
+    const userMsg = agent.messages.find((m) => m.role === 'user');
+    expect(userMsg?.content).toContain('HTML mockup of: a Pricing Page!');
+    expect(userMsg?.content).toContain('ONE self-contained HTML file');
+    expect(String(userMsg?.content)).toMatch(/a-pricing-page\.html/);
+  });
+
   it('/agents lists custom defs', async () => {
     const { agent, host } = makeTuiAgent(new FakeChatClient());
     fs.mkdirSync(path.join(agent.store.cwd, '.sensei', 'agents'), { recursive: true });

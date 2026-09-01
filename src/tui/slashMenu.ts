@@ -41,6 +41,12 @@ export const BUILTIN_COMMANDS: SlashItem[] = [
     'When the plan is presented: [y] approve & execute · [a] approve + auto-accept',
     'file edits for this session · [n]/Esc keep planning.',
   ]),
+  b('design', '<what>', 'build an HTML mockup and open it in your browser', [
+    'Sensei authors ONE self-contained HTML file (inline CSS/JS, offline-capable,',
+    'responsive) into .sensei/designs/<slug>.html and opens it in the default browser.',
+    'Iterate by just describing changes — it edits the same file and reopens it.',
+    'Example: /design a pricing page for a dev tool',
+  ]),
   b('also', '<text>', 'interject into what sensei is doing right now (works while busy)', [
     'While a turn runs, the text is delivered to the model at its next step as part of',
     'the current request — steer without restarting. Idle, it just runs as a prompt.',
@@ -167,6 +173,7 @@ export function helpLines(): string[] {
     '  custom commands: .sensei\\commands\\<name>.md ($ARGUMENTS and $1..$n substituted)',
     '  keys: !cmd runs in the shell directly · @path Tab-completes files · \\ then Enter = new line',
     '        typing while busy queues the message · Ctrl+O verbose tool output · Ctrl+A/E/W/U edit',
+    '        big pastes collapse to [pasted #N +L lines] and expand when you submit',
   ];
 }
 

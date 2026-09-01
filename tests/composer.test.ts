@@ -4,10 +4,14 @@
 import { describe, expect, it } from 'vitest';
 import { parseCliArgs, UsageError } from '../src/cli/args.js';
 import {
+  collapsePaste,
   completeFileToken,
   composerReduce,
   continuationOnEnter,
   EMPTY_COMPOSER,
+  expandPastes,
+  isPasteChunk,
+  newPasteStore,
   splitAtCursor,
   type ComposerState,
 } from '../src/tui/composer.js';
@@ -56,6 +60,58 @@ describe('composer reducer', () => {
   it('splitAtCursor for rendering', () => {
     expect(splitAtCursor(st('abc', 1))).toEqual({ before: 'a', at: 'b', after: 'c' });
     expect(splitAtCursor(st('abc'))).toEqual({ before: 'abc', at: ' ', after: '' });
+  });
+});
+
+describe('paste collapse', () => {
+  it('short inserts stay literal; long or multi-line inserts qualify', () => {
+    expect(isPasteChunk('hello world')).toBe(false);
+    expect(isPasteChunk('one\ntwo')).toBe(false); // a single newline is just multiline typing
+    expect(isPasteChunk('a\nb\nc')).toBe(true);
+    expect(isPasteChunk('x'.repeat(151))).toBe(true);
+  });
+
+  it('collapses to a chip at the caret and stores the text', () => {
+    const store = newPasteStore();
+    const pasted = 'line1\nline2\nline3';
+    const r = collapsePaste(st('see  here', 4), pasted, store, 1000, null);
+    expect(r.state.text).toBe('see [pasted #1 +3 lines] here');
+    expect(r.state.cursor).toBe(4 + '[pasted #1 +3 lines]'.length);
+    expect(store.pastes.get(1)).toBe(pasted);
+    expect(r.last).toEqual({ id: 1, time: 1000 });
+  });
+
+  it('a burst within the merge window appends and rewrites the chip count', () => {
+    const store = newPasteStore();
+    const r1 = collapsePaste(EMPTY_COMPOSER, 'a\nb\nc', store, 1000, null);
+    const r2 = collapsePaste(r1.state, '\nd\ne', store, 1080, r1.last);
+    expect(r2.state.text).toBe('[pasted #1 +5 lines]');
+    expect(store.pastes.get(1)).toBe('a\nb\nc\nd\ne');
+    // outside the window → a second chip
+    const r3 = collapsePaste(r2.state, 'x\ny\nz', store, 2000, r2.last);
+    expect(r3.state.text).toBe('[pasted #1 +5 lines][pasted #2 +3 lines]');
+  });
+
+  it('expandPastes restores content, prunes used entries, leaves unknown ids', () => {
+    const store = newPasteStore();
+    const r1 = collapsePaste(EMPTY_COMPOSER, 'AAA\nBBB\nCCC', store, 0, null);
+    const text = `before ${r1.state.text} after [pasted #9 +2 lines]`;
+    const out = expandPastes(text, store);
+    expect(out).toBe('before AAA\nBBB\nCCC after [pasted #9 +2 lines]');
+    expect(store.pastes.size).toBe(0); // pruned
+  });
+
+  it('a deleted chip simply never expands', () => {
+    const store = newPasteStore();
+    collapsePaste(EMPTY_COMPOSER, '1\n2\n3', store, 0, null);
+    expect(expandPastes('typed something else', store)).toBe('typed something else');
+    expect(store.pastes.size).toBe(1); // still stored, harmless
+  });
+
+  it('normalizes CRLF in stored pastes', () => {
+    const store = newPasteStore();
+    collapsePaste(EMPTY_COMPOSER, 'a\r\nb\r\nc', store, 0, null);
+    expect(store.pastes.get(1)).toBe('a\nb\nc');
   });
 });
 

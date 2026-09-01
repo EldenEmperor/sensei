@@ -101,6 +101,79 @@ export function splitAtCursor(s: ComposerState): { before: string; at: string; a
   return { before, at, after };
 }
 
+// --- paste collapse ----------------------------------------------------------
+// Big pastes become a compact chip in the composer ("[pasted #1 +42 lines]")
+// and expand back to the full text at submit time.
+
+/** An insert counts as a paste when it's long or clearly multi-line. */
+export function isPasteChunk(text: string): boolean {
+  return text.length > 150 || (text.match(/\n/g) ?? []).length >= 2;
+}
+
+export interface PasteStore {
+  counter: number;
+  pastes: Map<number, string>;
+}
+
+export const newPasteStore = (): PasteStore => ({ counter: 0, pastes: new Map() });
+
+const placeholderFor = (id: number, text: string): string =>
+  `[pasted #${id} +${text.split('\n').length} lines]`;
+
+/** Milliseconds within which a second paste chunk merges into the previous
+ *  one (terminals/ink deliver large pastes in several bursts). */
+export const PASTE_MERGE_WINDOW_MS = 120;
+
+export interface LastPaste {
+  id: number;
+  time: number;
+}
+
+/** Store the pasted text and insert (or update) its chip at the caret. */
+export function collapsePaste(
+  state: ComposerState,
+  text: string,
+  store: PasteStore,
+  now: number,
+  last: LastPaste | null,
+): { state: ComposerState; last: LastPaste } {
+  const normalized = text.replace(/\r\n?/g, '\n');
+  if (last && now - last.time <= PASTE_MERGE_WINDOW_MS && store.pastes.has(last.id)) {
+    // continuation burst: append to the existing paste and refresh its chip
+    const prev = store.pastes.get(last.id)!;
+    const oldChip = placeholderFor(last.id, prev);
+    const merged = prev + normalized;
+    store.pastes.set(last.id, merged);
+    const newChip = placeholderFor(last.id, merged);
+    const at = state.text.indexOf(oldChip);
+    if (at >= 0) {
+      const textOut = state.text.slice(0, at) + newChip + state.text.slice(at + oldChip.length);
+      const cursor = state.cursor >= at + oldChip.length ? state.cursor + (newChip.length - oldChip.length) : state.cursor;
+      return { state: { text: textOut, cursor }, last: { id: last.id, time: now } };
+    }
+    // chip was edited away — fall through to a fresh paste
+  }
+  const id = ++store.counter;
+  store.pastes.set(id, normalized);
+  const chip = placeholderFor(id, normalized);
+  return {
+    state: composerReduce(state, { type: 'insert', text: chip }),
+    last: { id, time: now },
+  };
+}
+
+/** Replace every chip with its stored text; used entries are pruned. A chip
+ *  the user deleted simply never expands; unknown ids stay literal. */
+export function expandPastes(text: string, store: PasteStore): string {
+  return text.replace(/\[pasted #(\d+) \+\d+ lines\]/g, (whole, idStr: string) => {
+    const id = Number(idStr);
+    const stored = store.pastes.get(id);
+    if (stored === undefined) return whole;
+    store.pastes.delete(id);
+    return stored;
+  });
+}
+
 // --- @file completion --------------------------------------------------------
 
 export interface FileCompletionResult {

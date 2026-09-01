@@ -167,6 +167,17 @@ Concise imperative instructions: the method to follow, which tools to use, the e
 
 If the stated purpose is vague, make sensible decisions rather than asking. Write the file with write_file, then confirm what the skill does and that it can be invoked as /<NAME> or loaded automatically via the skill tool.`;
 
+export const DESIGN_PROMPT = `Design and build an HTML mockup of: <WHAT>
+
+Rules:
+- ONE self-contained HTML file — all CSS and JS inline, no external requests, no CDN links. It must render fully offline.
+- Mockup fidelity: real layout, plausible copy and placeholder data, sensible hover/focus states, responsive down to ~380px. Aim for a tasteful modern look (whitespace, a restrained palette, one accent color, system font stack) unless the request says otherwise.
+- Write it with write_file to exactly: <FILE>
+- Then open it in the default browser with your shell tool (Windows: Start-Process "<FILE>" · macOS: open · Linux: xdg-open).
+- Finish with 3-5 terse bullets on the design decisions you made.
+
+If the user follows up with changes, edit the SAME file and reopen it.`;
+
 export const NEW_AGENT_PROMPT = `Create a new custom subagent named '<NAME>'. Purpose: <DESC>
 
 A custom subagent is a file .sensei${SEP}agents${SEP}<NAME>.md (relative to the current directory) in exactly this format:

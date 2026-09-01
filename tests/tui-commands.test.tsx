@@ -46,6 +46,7 @@ describe('every builtin command dispatches', () => {
     // command → substring the frame must contain after running it
     const table: [string, string][] = [
       ['/help', '/clear'],
+      ['/design', 'usage: /design'],
       ['/also', 'usage: /also'],
       ['/btw', 'usage: /btw'],
       ['/subtask', 'usage: /subtask'],

@@ -31,6 +31,9 @@ More composer behaviors:
   transcript — no model turn, no tokens.
 - **`@path`** inlines a file into your prompt (large files are pointed at the log
   tools instead); Tab completes paths, descending directories.
+- **Big pastes collapse to a chip** — `[pasted #1 +42 lines]` — instead of flooding the
+  composer; the full text expands into the prompt when you submit. Delete the chip to
+  drop the paste.
 
 ## The slash-command menu
 
@@ -61,6 +64,7 @@ Frequently used:
 | `/memory` | which SENSEI.md files are loaded |
 | `/init` | write a SENSEI.md for this directory |
 | `/investigate [path]` | deep-map a log file's structure |
+| `/design <what>` | sensei builds a self-contained HTML mockup in `.sensei/designs/` and opens it in your browser; iterate by describing changes |
 | `/clear` | reset the conversation |
 
 ## Plan mode
