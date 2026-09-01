@@ -1281,14 +1281,12 @@ export function App({ agent, host, version, bannerFrames, sprites, mcp }: AppPro
               ))}
             </Box>
           ))}
-          {busy ? (
-            <Box flexDirection="column" justifyContent="flex-end" marginLeft={2}>
-              <Text>{t.accent(SPINNER_FRAMES[frame % SPINNER_FRAMES.length]) + ' ' + t.dim(spinnerLabel)}</Text>
-            </Box>
-          ) : null}
         </Box>
-      ) : busy && !permReq && !askReq ? (
-        <Text>{t.accent(SPINNER_FRAMES[frame % SPINNER_FRAMES.length]) + ' ' + t.dim(spinnerLabel)}</Text>
+      ) : null}
+      {busy && !permReq && !askReq ? (
+        // the working status sits on its own line, left-aligned with the
+        // status bar below — not floating beside the (variable-width) scene
+        <Text>{'  ' + t.accent(SPINNER_FRAMES[frame % SPINNER_FRAMES.length]) + ' ' + t.dim(spinnerLabel)}</Text>
       ) : null}
       {todos.length > 0 ? (
         <Box flexDirection="column">
