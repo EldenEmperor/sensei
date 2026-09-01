@@ -1,6 +1,8 @@
 // Ink component tests: boot the real App with a FakeChatClient and drive it
 // through stdin — banner, slash commands, and a full fake turn.
 
+import fs from 'node:fs';
+import path from 'node:path';
 import { render } from 'ink-testing-library';
 import React from 'react';
 import { describe, expect, it } from 'vitest';
@@ -247,6 +249,98 @@ describe('Ink App', () => {
     await sleep(200);
     expect(agent.planMode).toBe(false);
     expect((agent.policy as { acceptEdits?: boolean }).acceptEdits).toBe(true);
+  });
+
+  it('/also interjects mid-turn and /stop aborts everything', async () => {
+    let call = 0;
+    const slowClient: ChatClient = {
+      chat: async (req) => {
+        call++;
+        await sleep(300);
+        return stopResponse(`reply ${call} (saw ${req.messages.length} messages)`);
+      },
+    };
+    const tmp = makeTempDir('sensei-ts-mid-');
+    const store = makeStore(tmp);
+    store.config.theme = false;
+    store.config.stream = false;
+    const host = new DeferredHost();
+    const agent = new SenseiAgent({ configStore: store, host, permissionPolicy: { mode: 'yolo' }, chatClient: slowClient });
+    const { lastFrame, stdin } = render(
+      React.createElement(App, { agent, host, version: 'test', bannerFrames: [] }),
+    );
+    await sleep(50);
+    stdin.write('long job');
+    await sleep(20);
+    stdin.write('\r');
+    await sleep(100); // now busy
+    stdin.write('/also focus on the parser');
+    await sleep(20);
+    stdin.write('\r'); // immediate dispatch, not queued
+    await sleep(50);
+    expect(lastFrame()).toContain('interjecting at the next step');
+    expect(agent.messages.some((m) => String(m.content).includes('<user-interjection>focus on the parser</user-interjection>'))).toBe(false); // not yet delivered (mid model call)
+    await sleep(400); // turn ends; interjection stays queued for the next boundary
+    stdin.write('next');
+    await sleep(20);
+    stdin.write('\r');
+    await sleep(400);
+    expect(agent.messages.some((m) => String(m.content).includes('<user-interjection>focus on the parser</user-interjection>'))).toBe(true);
+
+    // /stop while a new turn runs
+    stdin.write('another long job');
+    await sleep(20);
+    stdin.write('\r');
+    await sleep(100);
+    stdin.write('/stop');
+    await sleep(20);
+    stdin.write('\r');
+    await sleep(100);
+    expect(lastFrame()).toContain('⨯ stopped the current turn');
+  }, 15_000);
+
+  it('/subtask spawns a background subagent whose report is announced', async () => {
+    const fake = new FakeChatClient();
+    fake.enqueue(stopResponse('SIDE REPORT: readme is fine'));
+    const { agent, host } = makeTuiAgent(fake);
+    const { lastFrame, stdin } = render(
+      React.createElement(App, { agent, host, version: 'test', bannerFrames: [] }),
+    );
+    await sleep(50);
+    stdin.write('/subtask check the readme');
+    await sleep(20);
+    stdin.write('\r');
+    await sleep(300);
+    const frame = lastFrame()!;
+    expect(frame).toContain('sub1 spawned');
+    expect(frame).toContain('sub1 finished');
+    fake.enqueue(stopResponse('done'));
+    stdin.write('go on');
+    await sleep(20);
+    stdin.write('\r');
+    await sleep(200);
+    expect(agent.messages.some((m) => String(m.content).includes('SIDE REPORT: readme is fine'))).toBe(true);
+  });
+
+  it('/agents lists custom defs', async () => {
+    const { agent, host } = makeTuiAgent(new FakeChatClient());
+    fs.mkdirSync(path.join(agent.store.cwd, '.sensei', 'agents'), { recursive: true });
+    fs.writeFileSync(
+      path.join(agent.store.cwd, '.sensei', 'agents', 'helper.md'),
+      '---\ndescription: helps out\ntools: read_file\n---\nYou help.',
+    );
+    const { lastFrame, stdin } = render(
+      React.createElement(App, { agent, host, version: 'test', bannerFrames: [] }),
+    );
+    await sleep(50);
+    stdin.write('/agents');
+    await sleep(20);
+    stdin.write('\r');
+    await sleep(50);
+    const frame = lastFrame()!;
+    expect(frame).toContain('helper');
+    expect(frame).toContain('helps out');
+    expect(frame).toContain('tools: read_file');
   });
 
   it('ask_user renders the picker; a digit picks; the answer reaches the model', async () => {

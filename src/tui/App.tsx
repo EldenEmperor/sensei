@@ -13,7 +13,8 @@ import { buildCommandPrompt, findCustomCommand, listCustomCommands } from '../co
 import { getActiveModel, getMemory, OUTPUT_STYLES } from '../core/config.js';
 import { listProviders, resolveProvider, setActiveModel } from '../core/providers.js';
 import type { AgentEvent, AgentHost, PlanApprovalDecision } from '../core/events.js';
-import { INIT_PROMPT, INVESTIGATE_PROMPT, NEW_SKILL_PROMPT } from '../core/prompts.js';
+import { INIT_PROMPT, INVESTIGATE_PROMPT, NEW_AGENT_PROMPT, NEW_SKILL_PROMPT } from '../core/prompts.js';
+import { getAgentDefs } from '../core/agents.js';
 import { loadSessionFile } from '../core/sessions.js';
 import { transcriptCharCount } from '../core/transcript.js';
 import { getSkills } from '../core/skills.js';
@@ -25,7 +26,7 @@ import type {
   UserQuestionRequest,
 } from '../core/types.js';
 import type { McpManager } from '../mcp/client.js';
-import { finishedTaskNotes, listBackgroundTasks } from '../tools/tasks.js';
+import { finishedTaskNotes, listBackgroundTasks, stopAllBackgroundTasks } from '../tools/tasks.js';
 import { formatToolArgs } from '../cli/textOutput.js';
 import { getShell } from '../tools/platformShell.js';
 import { runShellCommand } from '../tools/shell.js';
@@ -128,7 +129,8 @@ export function App({ agent, host, version, bannerFrames, sprites, mcp }: AppPro
   const [bannerFrozen, setBannerFrozen] = useState(false);
   const bannerFrozenRef = useRef(false);
   const bannerIdxRef = useRef(0);
-  const [flourishStart, setFlourishStart] = useState<number | null>(null);
+  const [flourish, setFlourish] = useState<{ anim: 'sheath' | 'summon'; start: number } | null>(null);
+  const [subtaskCount, setSubtaskCount] = useState(0);
   const abortRef = useRef<AbortController | null>(null);
   const streamRef = useRef('');
   const turnStartRef = useRef<number | null>(null);
@@ -207,19 +209,19 @@ export function App({ agent, host, version, bannerFrames, sprites, mcp }: AppPro
 
   // spinner / sprite tick
   useEffect(() => {
-    if (!busy && flourishStart === null) return;
+    if (!busy && flourish === null && subtaskCount === 0) return;
     const t = setInterval(() => setFrame((f) => f + 1), 100);
     return () => clearInterval(t);
-  }, [busy, flourishStart]);
+  }, [busy, flourish, subtaskCount]);
 
-  // the sheath flourish plays once, then clears
+  // a one-shot flourish (sheath on stop/finish, summon on /subtask) then clears
   useEffect(() => {
-    if (flourishStart === null) return;
-    const sheath = sprites?.sheath;
-    const total = sheath ? sheath.frames.length * sheath.delayMs + 60 : 0;
-    const t = setTimeout(() => setFlourishStart(null), total);
+    if (flourish === null) return;
+    const anim = sprites?.[flourish.anim];
+    const total = anim ? anim.frames.length * anim.delayMs + 60 : 0;
+    const t = setTimeout(() => setFlourish(null), total);
     return () => clearTimeout(t);
-  }, [flourishStart, sprites]);
+  }, [flourish, sprites]);
 
   // wire the host
   useEffect(() => {
@@ -266,8 +268,15 @@ export function App({ agent, host, version, bannerFrames, sprites, mcp }: AppPro
             break;
           case 'turn-end':
             if (!e.aborted && e.finishReason !== 'blocked' && sprites?.sheath && theme.enabled) {
-              setFlourishStart(Date.now());
+              setFlourish({ anim: 'sheath', start: Date.now() });
             }
+            break;
+          case 'subtask-start':
+            setSubtaskCount(agent.activeSubtasks.size);
+            break;
+          case 'subtask-end':
+            setSubtaskCount(agent.activeSubtasks.size);
+            push(theme.dim(e.ok ? `⛩ ${e.id} finished — its report joins the conversation` : `⛩ ${e.id} stopped without a result`));
             break;
           default:
             break;
@@ -446,6 +455,89 @@ export function App({ agent, host, version, bannerFrames, sprites, mcp }: AppPro
         }
         agent.setPlanMode(!agent.planMode);
         push(t.dim(agent.planMode ? 'plan mode ON — read-only until you approve a plan' : 'plan mode OFF'));
+        break;
+      }
+      case '/also': {
+        if (!arg) {
+          push(t.dim('usage: /also <text> — add to what sensei is doing right now'));
+          break;
+        }
+        if (busy) {
+          agent.interject(
+            `<user-interjection>${arg}</user-interjection>\n(The user typed this while you were working — treat it as part of the current request and act on it now.)`,
+          );
+          push(t.dim('(interjecting at the next step…)'));
+        } else {
+          run(arg);
+        }
+        break;
+      }
+      case '/btw': {
+        if (!arg) {
+          push(t.dim('usage: /btw <note> — background context, no course change'));
+          break;
+        }
+        agent.interject(
+          `<user-note>${arg}</user-note>\n(Background context from the user — keep working as planned; use it only where relevant.)`,
+        );
+        push(t.dim(busy ? '(noted — delivering at the next step)' : '(noted for the next turn)'));
+        break;
+      }
+      case '/subtask': {
+        if (!arg) {
+          push(t.dim('usage: /subtask <prompt> — run a side investigation in the background'));
+          break;
+        }
+        const id = agent.runBackgroundSubtask(arg);
+        if (sprites?.summon && theme.enabled) setFlourish({ anim: 'summon', start: Date.now() });
+        push(t.accent(`⛩ ${id} spawned`) + t.dim(` — working in the background: ${protectTerminalText(arg.slice(0, 60))}`));
+        break;
+      }
+      case '/stop': {
+        const stoppedTurn = busy && abortRef.current !== null;
+        if (stoppedTurn) abortRef.current?.abort();
+        const subs = agent.stopSubtasks();
+        const bg = stopAllBackgroundTasks();
+        const parts: string[] = [];
+        if (stoppedTurn) parts.push('the current turn');
+        if (subs.length > 0) parts.push(`${subs.length} subtask${subs.length > 1 ? 's' : ''}`);
+        if (bg.length > 0) parts.push(`${bg.length} background task${bg.length > 1 ? 's' : ''}`);
+        if (parts.length === 0) {
+          push(t.dim('(nothing running)'));
+          break;
+        }
+        if (sprites?.sheath && theme.enabled) setFlourish({ anim: 'sheath', start: Date.now() });
+        push(t.err(`⨯ stopped ${parts.join(', ')}`));
+        break;
+      }
+      case '/agents': {
+        const [sub, ...restParts] = arg.split(/\s+/).filter(Boolean);
+        if (sub === 'new') {
+          const agentName = restParts[0] ?? '';
+          if (!agentName) {
+            push(t.dim('usage: /agents new <name> [purpose]'));
+            break;
+          }
+          const purpose = restParts.slice(1).join(' ') || '(decide from the name)';
+          run(NEW_AGENT_PROMPT.replace(/<NAME>/g, agentName).replace(/<DESC>/g, purpose));
+          break;
+        }
+        const defs = getAgentDefs(agent.store.cwd, agent.store.configDir);
+        if (defs.length === 0) {
+          push(t.dim('no custom agents — /agents new <name> [purpose] creates one (.sensei/agents/<name>.md)'));
+          break;
+        }
+        for (const d of defs) {
+          push(
+            t.accent(`  ${d.name}`) +
+              t.dim(
+                ` (${d.source}) — ${d.description || 'no description'}` +
+                  (d.tools ? ` · tools: ${d.tools.join(', ')}` : '') +
+                  (d.model ? ` · model: ${d.model}` : ''),
+              ),
+          );
+        }
+        push(t.dim('  used via the task tool (subagent_type) or /subtask · /agents new <name> [purpose] adds one'));
         break;
       }
       case '/mode': {
@@ -726,9 +818,18 @@ export function App({ agent, host, version, bannerFrames, sprites, mcp }: AppPro
     else run(line);
   };
 
+  // commands that act immediately even while a turn is running
+  const IMMEDIATE_WHILE_BUSY = ['/stop', '/also', '/btw', '/subtask', '/agents'];
+
   const submitLine = (line: string): void => {
     history.current.push(line);
     if (busy) {
+      const cmd = line.split(/\s/)[0].toLowerCase();
+      if (IMMEDIATE_WHILE_BUSY.includes(cmd)) {
+        push(theme.accent('❯ ') + protectTerminalText(line));
+        handleSlash(line);
+        return;
+      }
       queuedRef.current.push(line);
       setQueuedCount(queuedRef.current.length);
       push(theme.dim(`(queued: ${protectTerminalText(line.split('\n')[0]).slice(0, 60)})`));
@@ -1002,10 +1103,16 @@ export function App({ agent, host, version, bannerFrames, sprites, mcp }: AppPro
       if (!anim || anim.frames.length === 0) return null;
       return anim.frames[Math.floor((frame * 100) / anim.delayMs) % anim.frames.length];
     }
-    if (flourishStart !== null) {
-      const anim = sprites.sheath;
+    if (flourish !== null) {
+      const anim = sprites[flourish.anim];
       if (!anim || anim.frames.length === 0) return null;
-      return anim.frames[Math.min(anim.frames.length - 1, Math.floor((Date.now() - flourishStart) / anim.delayMs))];
+      return anim.frames[Math.min(anim.frames.length - 1, Math.floor((Date.now() - flourish.start) / anim.delayMs))];
+    }
+    if (subtaskCount > 0) {
+      // a spectral clone keeps working in the background
+      const anim = sprites.summon;
+      if (!anim || anim.frames.length === 0) return null;
+      return anim.frames[Math.floor((frame * 100) / anim.delayMs) % anim.frames.length];
     }
     return null;
   })();
@@ -1164,7 +1271,7 @@ export function App({ agent, host, version, bannerFrames, sprites, mcp }: AppPro
         {t.dim(
           statusOverride
             ? `  ${protectTerminalText(statusOverride)}${queuedCount > 0 ? ` · ${queuedCount} queued` : ''}`
-            : `  ${modelLabel} · ~${(tokens.inTok / 1000).toFixed(1)}k in / ${(tokens.outTok / 1000).toFixed(1)}k out${agent.planMode ? ' · PLAN' : ''}${queuedCount > 0 ? ` · ${queuedCount} queued` : ''}`,
+            : `  ${modelLabel} · ~${(tokens.inTok / 1000).toFixed(1)}k in / ${(tokens.outTok / 1000).toFixed(1)}k out${agent.planMode ? ' · PLAN' : ''}${queuedCount > 0 ? ` · ${queuedCount} queued` : ''}${subtaskCount > 0 ? ` · ⛩ ${subtaskCount} subtask${subtaskCount > 1 ? 's' : ''}` : ''}`,
         )}
       </Text>
     </Box>

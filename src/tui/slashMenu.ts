@@ -41,6 +41,29 @@ export const BUILTIN_COMMANDS: SlashItem[] = [
     'When the plan is presented: [y] approve & execute · [a] approve + auto-accept',
     'file edits for this session · [n]/Esc keep planning.',
   ]),
+  b('also', '<text>', 'interject into what sensei is doing right now (works while busy)', [
+    'While a turn runs, the text is delivered to the model at its next step as part of',
+    'the current request — steer without restarting. Idle, it just runs as a prompt.',
+  ]),
+  b('btw', '<note>', 'drop background context without changing course (works while busy)', [
+    'The note reaches the model at its next step (or next turn) marked as context to',
+    'use only where relevant — it will not redirect the current work.',
+  ]),
+  b('subtask', '<prompt>', 'spawn a background side-investigation while you keep working', [
+    'Runs an independent subagent (own context, non-interactive) in parallel; a spectral',
+    'clone appears while it works, and its report is injected into the conversation when',
+    'it finishes. /stop kills running subtasks. Works while sensei is busy.',
+  ]),
+  b('stop', '', 'stop everything: the current turn, subtasks, and background tasks', [
+    'Aborts the in-flight turn (like Esc) AND kills every running /subtask and',
+    'run_in_background task, reporting what was stopped. Works while sensei is busy.',
+  ]),
+  b('agents', '[new <name> [purpose]]', 'list custom subagents, or have sensei create one', [
+    '/agents           list defs from .sensei/agents/ and ~/.sensei/agents/',
+    '/agents new <name> [purpose]   sensei authors the agent file for you',
+    'Custom agents run via the task tool (subagent_type) with their own prompt,',
+    'tool allowlist, and model. Listing works while sensei is busy.',
+  ]),
   b('mode', '[code|logs]', 'system-prompt doctrine: coding (default) or log debugging', [
     'code — coding doctrine leads: read-before-write, minimal diffs matching the',
     'surrounding conventions, risk-proportional verification (run the checks!).',

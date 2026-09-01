@@ -91,6 +91,12 @@ export class SenseiAgent {
   private readonly additionalDirs: string[];
   /** Allow rules granted only for the current turn (command allowed-tools). */
   private turnAllowRules: string[] = [];
+  /** User interjections (/also, /btw, subtask results) waiting to join the
+   *  transcript at the next legal boundary. */
+  private pendingInterjections: string[] = [];
+  /** Live background subtasks (/subtask): id → controller + description. */
+  readonly activeSubtasks = new Map<string, { description: string; controller: AbortController }>();
+  private nextSubtaskId = 0;
 
   constructor(opts: AgentOptions) {
     this.store = opts.configStore;
@@ -174,6 +180,70 @@ export class SenseiAgent {
     }
   }
 
+  /** Queue a user interjection; it joins the transcript at the next legal
+   *  boundary (between tool rounds, or at the start of the next turn). */
+  interject(content: string): void {
+    this.pendingInterjections.push(content);
+  }
+
+  /** Drain queued interjections as user messages. Only called at boundaries
+   *  where the tool-pair invariant holds (same spots as background-task notices). */
+  private drainInterjections(messages: ChatMessage[]): void {
+    while (this.pendingInterjections.length > 0) {
+      const content = this.pendingInterjections.shift()!;
+      messages.push({ role: 'user', content });
+      this.note('(interjection delivered to the model)');
+    }
+  }
+
+  /** /subtask: run a side investigation in the background while the main
+   *  conversation continues; the report is interjected when it finishes.
+   *  Note: the chat client (and its thinking-replay cache) is shared with the
+   *  main turn — concurrent use can drop one turn's thinking replay, a
+   *  quality-only effect. Token totals are session-wide by design. */
+  runBackgroundSubtask(prompt: string): string {
+    const id = `sub${++this.nextSubtaskId}`;
+    const description = prompt.split('\n')[0].slice(0, 60);
+    const controller = new AbortController();
+    this.activeSubtasks.set(id, { description, controller });
+    this.emit({ type: 'subtask-start', id, description });
+    void this.runSubagent(prompt, {
+      maxRounds: 20,
+      excludeTools: ['task', 'task_parallel', 'verify', 'exit_plan_mode', 'ask_user'],
+      nonInteractive: true,
+      signal: controller.signal,
+    })
+      .then((r) => {
+        const ok = !r.aborted && Boolean(r.finalText);
+        if (ok) {
+          this.interject(
+            `<subtask-result id="${id}">\n${r.finalText}\n</subtask-result>\n(A background subtask the user started has finished — fold its findings into the current work as useful.)`,
+          );
+        }
+        this.activeSubtasks.delete(id); // before the event so UI counts are current
+        this.emit({ type: 'subtask-end', id, ok });
+      })
+      .catch(() => {
+        this.activeSubtasks.delete(id);
+        this.emit({ type: 'subtask-end', id, ok: false });
+      });
+    return id;
+  }
+
+  /** Abort every running /subtask. Returns the ids that were stopped. */
+  stopSubtasks(): string[] {
+    const stopped: string[] = [];
+    for (const [id, s] of this.activeSubtasks) {
+      try {
+        s.controller.abort();
+      } catch {
+        /* already done */
+      }
+      stopped.push(id);
+    }
+    return stopped;
+  }
+
   /** @file references: inline small files, point big ones at the log tools. */
   expandFileReferences(text: string): string {
     let appendix = '';
@@ -227,6 +297,7 @@ export class SenseiAgent {
     for (const c of hookContext) text += `\n<system-note>${c}</system-note>`;
     const expanded = this.expandFileReferences(text);
     this.messages.push({ role: 'user', content: expanded });
+    this.drainInterjections(this.messages);
     addBackgroundTaskNotices(this.messages);
     this.permissionDenials = [];
     this.currentSignal = opts.signal;
@@ -371,6 +442,7 @@ export class SenseiAgent {
       }
 
       if (depth === 0) {
+        this.drainInterjections(messages);
         addBackgroundTaskNotices(messages);
         await this.compactContext(false);
       }
@@ -507,6 +579,9 @@ export class SenseiAgent {
       allowedTools?: string[];
       /** Model override for this subagent (rides on the provider layer). */
       model?: string;
+      /** Abort signal; defaults to the main turn's signal. Background
+       *  subtasks pass their own so they outlive/abort independently. */
+      signal?: AbortSignal;
     },
   ): Promise<{ finalText: string | null; aborted: boolean; rounds: number }> {
     const sys = opts.systemPrompt
@@ -534,7 +609,7 @@ export class SenseiAgent {
       { role: 'system', content: sys },
       { role: 'user', content: prompt },
     ];
-    const r = await this.runLoop(child, opts.maxRounds, 1, this.currentSignal, {
+    const r = await this.runLoop(child, opts.maxRounds, 1, opts.signal ?? this.currentSignal, {
       excludeTools: exclude,
       nonInteractive: opts.nonInteractive,
       chatClient,

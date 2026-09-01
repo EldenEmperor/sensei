@@ -71,6 +71,8 @@ You are a log triager. Given a log file, find the top three issues with evidence
 - The main agent runs them through its `task` tool with `subagent_type: "log-triager"`;
   the tool's description advertises every defined agent, so the model discovers them
   automatically. Subagents get a fresh context and return only their final report.
+- `/agents` in the TUI lists your defs; `/agents new <name> [purpose]` has sensei author
+  the file for you; `/subtask <prompt>` runs a one-off background subagent without a def.
 
 ## Memory: SENSEI.md
 

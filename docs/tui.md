@@ -80,6 +80,19 @@ Proposed plan:
   of the session ([acceptEdits](permissions.md#permission-modes))
 - `n`/Esc — sensei stays in plan mode and asks what to change
 
+## Steering while it works
+
+Five commands act **immediately** even while sensei is busy (everything else you type
+queues for the next turn):
+
+| Command | What it does |
+|---|---|
+| `/also <text>` | interjects into the *running* request — delivered to the model at its next step, as part of what it's doing. Idle, it just runs as a prompt. |
+| `/btw <note>` | drops background context without changing course — marked "use only where relevant" |
+| `/subtask <prompt>` | spawns an independent background subagent (a spectral clone appears while it works); its report is injected into the conversation when it finishes, and the status bar shows `⛩ N subtasks` |
+| `/stop` | stops **everything** — aborts the in-flight turn, kills every running subtask and background task, and reports what was stopped (with a sheath animation) |
+| `/agents` | lists your custom subagents; `/agents new <name> [purpose]` has sensei author one ([customization](customization.md#custom-subagents)) |
+
 ## Clarifying questions
 
 When a genuine decision blocks sensei mid-task (ambiguous scope, several defensible

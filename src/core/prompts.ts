@@ -167,6 +167,21 @@ Concise imperative instructions: the method to follow, which tools to use, the e
 
 If the stated purpose is vague, make sensible decisions rather than asking. Write the file with write_file, then confirm what the skill does and that it can be invoked as /<NAME> or loaded automatically via the skill tool.`;
 
+export const NEW_AGENT_PROMPT = `Create a new custom subagent named '<NAME>'. Purpose: <DESC>
+
+A custom subagent is a file .sensei${SEP}agents${SEP}<NAME>.md (relative to the current directory) in exactly this format:
+
+---
+name: <NAME>
+description: one line saying what the agent does AND when the main agent should delegate to it
+tools: comma, separated, tool, names        (optional — omit for every tool; restrict for focus/safety)
+model: model-name                            (optional — e.g. a fast cheap model for bulk reading)
+---
+
+The body is the agent's SYSTEM PROMPT: who it is, its method, and what its final report must contain. Subagents work autonomously (they cannot ask questions) and only their final message reaches the parent — say so in the prompt.
+
+If the stated purpose is vague, make sensible decisions rather than asking. Write the file with write_file, then confirm the agent is ready and that the task tool now accepts subagent_type: '<NAME>'.`;
+
 export const INIT_PROMPT = `Explore the current directory and write a SENSEI.md project-memory file for future sessions. Investigate with glob, read_file on key files, and log_stats on any log files you find. Cover: what this directory/project is, where the log files live and what formats/timestamp styles they use, common failure patterns or error templates you can see, and useful commands. Keep it under 150 lines. Write it with write_file to .${SEP}SENSEI.md, then summarize what you recorded.`;
 
 // auto_continue: when a turn ends with a tutorial telling the USER what to run,

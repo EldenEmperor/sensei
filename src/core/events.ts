@@ -8,6 +8,8 @@ export type AgentEvent =
   | { type: 'tool-end'; callId: string; name: string; result: string; ok: boolean; ms: number; depth: number }
   | { type: 'subagent-start'; description: string }
   | { type: 'subagent-end'; rounds: number }
+  | { type: 'subtask-start'; id: string; description: string }
+  | { type: 'subtask-end'; id: string; ok: boolean }
   | { type: 'todos'; todos: Todo[] }
   | { type: 'note'; text: string }
   | { type: 'usage'; promptTokens: number; completionTokens: number; costUsd: number | null }

@@ -113,6 +113,69 @@ describe('subagents', () => {
   });
 });
 
+describe('interjections and background subtasks', () => {
+  const waitFor = async (cond: () => boolean, ms = 2000): Promise<void> => {
+    const start = Date.now();
+    while (!cond()) {
+      if (Date.now() - start > ms) throw new Error('waitFor timed out');
+      await new Promise((r) => setTimeout(r, 10));
+    }
+  };
+
+  it('interject() lands as a user message before the next model call', async () => {
+    fake.enqueue(stopResponse('ok'));
+    const agent = makeAgent();
+    agent.interject('<user-note>deploys are frozen</user-note>');
+    await agent.ask('hello');
+    const idx = agent.messages.findIndex((m) => String(m.content).includes('deploys are frozen'));
+    const replyIdx = agent.messages.findIndex((m) => m.role === 'assistant');
+    expect(idx).toBeGreaterThan(0);
+    expect(idx).toBeLessThan(replyIdx); // delivered before the model answered
+  });
+
+  it('a background subtask reports back and its result joins the next turn', async () => {
+    const events: string[] = [];
+    host.events.length = 0;
+    fake.enqueue(stopResponse('SUBTASK REPORT: the cache is cold'));
+    const agent = makeAgent();
+    const id = agent.runBackgroundSubtask('check the cache');
+    expect(id).toBe('sub1');
+    await waitFor(() => agent.activeSubtasks.size === 0);
+    for (const e of host.events) if (e.type.startsWith('subtask')) events.push(`${e.type}`);
+    expect(events).toEqual(['subtask-start', 'subtask-end']);
+    fake.enqueue(stopResponse('using the report'));
+    await agent.ask('continue');
+    const injected = agent.messages.find((m) => String(m.content).includes('<subtask-result id="sub1">'));
+    expect(injected?.content).toContain('SUBTASK REPORT: the cache is cold');
+  });
+
+  it('stopSubtasks aborts a running subtask (subtask-end ok=false)', async () => {
+    const slow: import('../src/core/chat/client.js').ChatClient = {
+      chat: (_req, opts) =>
+        new Promise((resolve) => {
+          const t = setTimeout(() => resolve(stopResponse('too late')), 5000);
+          opts?.signal?.addEventListener('abort', () => {
+            clearTimeout(t);
+            resolve({ aborted: true });
+          });
+        }),
+    };
+    const agent = new SenseiAgent({
+      configStore: makeStore(tmp),
+      host,
+      permissionPolicy: { mode: 'yolo' },
+      chatClient: slow,
+    });
+    host.events.length = 0;
+    agent.runBackgroundSubtask('slow work');
+    expect(agent.activeSubtasks.size).toBe(1);
+    expect(agent.stopSubtasks()).toEqual(['sub1']);
+    await waitFor(() => agent.activeSubtasks.size === 0);
+    const end = host.events.find((e) => e.type === 'subtask-end') as { ok: boolean } | undefined;
+    expect(end?.ok).toBe(false);
+  }, 10_000);
+});
+
 describe('ask_user', () => {
   it('returns the chosen option (with description) to the model', async () => {
     fake.enqueue(
