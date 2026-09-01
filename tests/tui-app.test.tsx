@@ -249,6 +249,116 @@ describe('Ink App', () => {
     expect((agent.policy as { acceptEdits?: boolean }).acceptEdits).toBe(true);
   });
 
+  it('ask_user renders the picker; a digit picks; the answer reaches the model', async () => {
+    const fake = new FakeChatClient();
+    fake.enqueue({
+      choices: [
+        {
+          message: {
+            role: 'assistant',
+            content: null,
+            tool_calls: [
+              {
+                id: 'q1',
+                type: 'function',
+                function: {
+                  name: 'ask_user',
+                  arguments: JSON.stringify({
+                    question: 'Which auth flow?',
+                    header: 'Auth',
+                    options: [
+                      { label: 'OAuth', description: 'browser sign-in' },
+                      { label: 'API key', description: 'env var' },
+                    ],
+                  }),
+                },
+              },
+            ],
+          },
+          finish_reason: 'tool_calls',
+        },
+      ],
+      usage: { prompt_tokens: 1, completion_tokens: 1 },
+    });
+    fake.enqueue(stopResponse('going with your pick'));
+    const { agent, host } = makeTuiAgent(fake);
+    const { lastFrame, stdin } = render(
+      React.createElement(App, { agent, host, version: 'test', bannerFrames: [] }),
+    );
+    await sleep(50);
+    stdin.write('set up auth');
+    await sleep(20);
+    stdin.write('\r');
+    await sleep(200);
+    const frame = lastFrame()!;
+    expect(frame).toContain('Which auth flow?');
+    expect(frame).toContain('1. OAuth');
+    expect(frame).toContain('2. API key');
+    expect(frame).toContain('Other…');
+    stdin.write('2'); // digit pick
+    await sleep(200);
+    const toolMsg = agent.messages.find((m) => m.role === 'tool');
+    expect(toolMsg?.content).toBe('The user chose: API key (env var)');
+    expect(lastFrame()).toContain('going with your pick');
+  });
+
+  it('ask_user Other… takes free text; Esc dismisses', async () => {
+    const askCall = (id: string) => ({
+      choices: [
+        {
+          message: {
+            role: 'assistant' as const,
+            content: null,
+            tool_calls: [
+              {
+                id,
+                type: 'function' as const,
+                function: {
+                  name: 'ask_user',
+                  arguments: JSON.stringify({ question: 'Pick?', options: [{ label: 'a' }, { label: 'b' }] }),
+                },
+              },
+            ],
+          },
+          finish_reason: 'tool_calls',
+        },
+      ],
+      usage: { prompt_tokens: 1, completion_tokens: 1 },
+    });
+    const fake = new FakeChatClient();
+    fake.enqueue(askCall('q1'));
+    fake.enqueue(stopResponse('ok1'));
+    fake.enqueue(askCall('q2'));
+    fake.enqueue(stopResponse('ok2'));
+    const { agent, host } = makeTuiAgent(fake);
+    const { lastFrame, stdin } = render(
+      React.createElement(App, { agent, host, version: 'test', bannerFrames: [] }),
+    );
+    await sleep(50);
+    stdin.write('first');
+    await sleep(20);
+    stdin.write('\r');
+    await sleep(200);
+    stdin.write('3'); // jump to Other…
+    await sleep(30);
+    expect(lastFrame()).toContain('your answer:');
+    stdin.write('use SAML');
+    await sleep(30);
+    stdin.write('\r');
+    await sleep(200);
+    expect(agent.messages.find((m) => m.role === 'tool')?.content).toBe('The user answered: use SAML');
+    // second round: Esc dismisses
+    stdin.write('second');
+    await sleep(20);
+    stdin.write('\r');
+    await sleep(200);
+    expect(lastFrame()).toContain('Pick?');
+    stdin.write(String.fromCharCode(27)); // Esc
+    await sleep(200);
+    const tools = agent.messages.filter((m) => m.role === 'tool');
+    expect(tools.at(-1)?.content).toContain('best judgment');
+  });
+
   it('plan mode toggles via /plan and blocks writes', async () => {
     const fake = new FakeChatClient();
     const { agent, host } = makeTuiAgent(fake);

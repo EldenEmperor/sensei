@@ -161,7 +161,7 @@ const store = new ConfigStore();
 store.load();
 const agent = new SenseiAgent({
   configStore: store,
-  host: { onEvent: console.log, requestPermission: async () => ({ allow: false, reason: 'non-interactive' }), requestPlanApproval: async () => ({ approved: false }) },
+  host: { onEvent: console.log, requestPermission: async () => ({ allow: false, reason: 'non-interactive' }), requestPlanApproval: async () => ({ approved: false }), requestUserChoice: async () => ({ cancelled: true }) },
   permissionPolicy: { mode: 'yolo' },
   local: true,
 });
@@ -182,7 +182,7 @@ See `examples/drive-spawn.mjs` (child-process driver with `--continue`) and `exa
 
 ## General tooling
 
-`read_file` `write_file` `edit_file` `multi_edit` `glob` `grep` · shell: `run_powershell` on Windows / `bash` on macOS+Linux (foreground or `run_in_background` → `task_output`/`kill_task`) · subagents: `task`, `verify`, `task_parallel` (≤3 concurrent, in-process) — plus **custom agents**: `.sensei/agents/<name>.md` (project) or `~/.sensei/agents/<name>.md` (frontmatter `name`/`description`/`tools`/`model`, body = system prompt) run via `task` with `subagent_type`, with their own tool allowlist and model override · `todo_write` · `web_search` / `web_fetch` / `web_browser` (headless Edge/Chrome) · `skill` · `exit_plan_mode` · every configured MCP server's tools as `mcp__<server>__<tool>`.
+`read_file` `write_file` `edit_file` `multi_edit` `glob` `grep` · shell: `run_powershell` on Windows / `bash` on macOS+Linux (foreground or `run_in_background` → `task_output`/`kill_task`) · subagents: `task`, `verify`, `task_parallel` (≤3 concurrent, in-process) — plus **custom agents**: `.sensei/agents/<name>.md` (project) or `~/.sensei/agents/<name>.md` (frontmatter `name`/`description`/`tools`/`model`, body = system prompt) run via `task` with `subagent_type`, with their own tool allowlist and model override · `todo_write` · `ask_user` (interactive clarifying questions with an option picker) · `web_search` / `web_fetch` / `web_browser` (headless Edge/Chrome) · `skill` · `exit_plan_mode` · every configured MCP server's tools as `mcp__<server>__<tool>`.
 
 ## Architecture
 

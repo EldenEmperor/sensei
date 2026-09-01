@@ -17,7 +17,13 @@ import { INIT_PROMPT, INVESTIGATE_PROMPT, NEW_SKILL_PROMPT } from '../core/promp
 import { loadSessionFile } from '../core/sessions.js';
 import { transcriptCharCount } from '../core/transcript.js';
 import { getSkills } from '../core/skills.js';
-import type { PermissionDecision, PermissionRequest, Todo } from '../core/types.js';
+import type {
+  PermissionDecision,
+  PermissionRequest,
+  Todo,
+  UserChoiceDecision,
+  UserQuestionRequest,
+} from '../core/types.js';
 import type { McpManager } from '../mcp/client.js';
 import { finishedTaskNotes, listBackgroundTasks } from '../tools/tasks.js';
 import { formatToolArgs } from '../cli/textOutput.js';
@@ -58,6 +64,9 @@ export class DeferredHost implements AgentHost {
   }
   requestPlanApproval(plan: string): Promise<PlanApprovalDecision> {
     return this.target ? this.target.requestPlanApproval(plan) : Promise.resolve({ approved: false });
+  }
+  requestUserChoice(req: UserQuestionRequest): Promise<UserChoiceDecision> {
+    return this.target ? this.target.requestUserChoice(req) : Promise.resolve({ cancelled: true });
   }
 }
 
@@ -100,6 +109,10 @@ export function App({ agent, host, version, bannerFrames, sprites, mcp }: AppPro
   const [frame, setFrame] = useState(0);
   const [permReq, setPermReq] = useState<{ req: PermissionRequest; resolve: (d: PermissionDecision) => void } | null>(null);
   const [planReq, setPlanReq] = useState<{ plan: string; resolve: (d: PlanApprovalDecision) => void } | null>(null);
+  const [askReq, setAskReq] = useState<{ req: UserQuestionRequest; resolve: (d: UserChoiceDecision) => void } | null>(null);
+  const [askSel, setAskSel] = useState(0);
+  const [askChecked, setAskChecked] = useState<Set<number>>(new Set());
+  const [askOther, setAskOther] = useState<ComposerState | null>(null);
   const [comp, setComp] = useState<ComposerState>(EMPTY_COMPOSER);
   const [menuSel, setMenuSel] = useState(0);
   const [menuDismissed, setMenuDismissed] = useState(false);
@@ -262,6 +275,13 @@ export function App({ agent, host, version, bannerFrames, sprites, mcp }: AppPro
       },
       requestPermission: (req) => new Promise<PermissionDecision>((resolve) => setPermReq({ req, resolve })),
       requestPlanApproval: (plan) => new Promise<PlanApprovalDecision>((resolve) => setPlanReq({ plan, resolve })),
+      requestUserChoice: (req) =>
+        new Promise<UserChoiceDecision>((resolve) => {
+          setAskSel(0);
+          setAskChecked(new Set());
+          setAskOther(null);
+          setAskReq({ req, resolve });
+        }),
     };
     return () => {
       host.target = null;
@@ -740,6 +760,88 @@ export function App({ agent, host, version, bannerFrames, sprites, mcp }: AppPro
       else if (c === 'n' || key.escape || key.return) done({ allow: false, reason: 'denied' });
       return;
     }
+    if (askReq) {
+      const opts = askReq.req.options;
+      const otherIdx = opts.length; // "Other…" is always the last row
+      const done = (d: UserChoiceDecision): void => {
+        const r = askReq;
+        setAskReq(null);
+        setAskOther(null);
+        r.resolve(d);
+      };
+      // free-text entry mode
+      if (askOther) {
+        if (key.escape) {
+          setAskOther(null);
+          return;
+        }
+        if (key.return) {
+          const text = askOther.text.trim();
+          if (text) done({ selected: [], otherText: text });
+          else setAskOther(null);
+          return;
+        }
+        if (key.leftArrow) setAskOther((s) => s && composerReduce(s, { type: 'left' }));
+        else if (key.rightArrow) setAskOther((s) => s && composerReduce(s, { type: 'right' }));
+        else if (key.backspace || key.delete) setAskOther((s) => s && composerReduce(s, { type: 'backspace' }));
+        else if (ch && !key.ctrl && !key.meta) setAskOther((s) => s && composerReduce(s, { type: 'insert', text: ch }));
+        return;
+      }
+      if (key.escape) {
+        done({ cancelled: true });
+        return;
+      }
+      if (key.upArrow) {
+        setAskSel((s) => Math.max(0, s - 1));
+        return;
+      }
+      if (key.downArrow) {
+        setAskSel((s) => Math.min(otherIdx, s + 1));
+        return;
+      }
+      const digit = /^[1-9]$/.test(ch) ? Number(ch) - 1 : null;
+      if (digit !== null && digit <= otherIdx) {
+        if (digit === otherIdx) {
+          setAskOther(EMPTY_COMPOSER);
+          return;
+        }
+        if (askReq.req.multiSelect) {
+          setAskSel(digit);
+          setAskChecked((prev) => {
+            const next = new Set(prev);
+            if (next.has(digit)) next.delete(digit);
+            else next.add(digit);
+            return next;
+          });
+          return;
+        }
+        done({ selected: [opts[digit].label] });
+        return;
+      }
+      if (askReq.req.multiSelect && ch === ' ' && askSel < otherIdx) {
+        setAskChecked((prev) => {
+          const next = new Set(prev);
+          if (next.has(askSel)) next.delete(askSel);
+          else next.add(askSel);
+          return next;
+        });
+        return;
+      }
+      if (key.return) {
+        if (askSel === otherIdx) {
+          setAskOther(EMPTY_COMPOSER);
+          return;
+        }
+        if (askReq.req.multiSelect) {
+          const picked = [...askChecked].sort((a, b) => a - b).map((i) => opts[i].label);
+          done({ selected: picked.length > 0 ? picked : [opts[askSel].label] });
+          return;
+        }
+        done({ selected: [opts[askSel].label] });
+        return;
+      }
+      return; // askReq captures everything else
+    }
     if (planReq) {
       const done = (d: PlanApprovalDecision): void => {
         const r = planReq;
@@ -894,7 +996,7 @@ export function App({ agent, host, version, bannerFrames, sprites, mcp }: AppPro
   // while subagents work, idle glint while the model thinks, sheath on finish
   const spriteFrame = ((): string[] | null => {
     if (!sprites || !theme.enabled) return null;
-    if (busy && !permReq) {
+    if (busy && !permReq && !askReq) {
       const name = activeTool ? (SUBAGENT_TOOLS.includes(activeTool) ? 'summon' : 'slash') : 'thinking';
       const anim = sprites[name] ?? sprites.thinking;
       if (!anim || anim.frames.length === 0) return null;
@@ -935,7 +1037,7 @@ export function App({ agent, host, version, bannerFrames, sprites, mcp }: AppPro
             </Box>
           ) : null}
         </Box>
-      ) : busy && !permReq ? (
+      ) : busy && !permReq && !askReq ? (
         <Text>{t.accent(SPINNER_FRAMES[frame % SPINNER_FRAMES.length]) + ' ' + t.dim(spinnerLabel)}</Text>
       ) : null}
       {todos.length > 0 ? (
@@ -955,6 +1057,51 @@ export function App({ agent, host, version, bannerFrames, sprites, mcp }: AppPro
               ))
             : null}
           <Text>{t.dim('  Allow? [y]es / [n]o / [a]lways this session / [p]ersist to allowlist')}</Text>
+        </Box>
+      ) : askReq ? (
+        <Box flexDirection="column">
+          <Text>
+            {t.accent(`◆ ${askReq.req.header ? protectTerminalText(askReq.req.header) + ' — ' : ''}`) +
+              t.bold(protectTerminalText(askReq.req.question))}
+          </Text>
+          {askOther ? (
+            <Text>
+              {'  ' + t.dim('your answer: ')}
+              {protectTerminalText(askOther.text.slice(0, askOther.cursor))}
+              <Text inverse>{protectTerminalText(askOther.cursor < askOther.text.length ? askOther.text[askOther.cursor] : ' ')}</Text>
+              {protectTerminalText(askOther.cursor < askOther.text.length ? askOther.text.slice(askOther.cursor + 1) : '')}
+            </Text>
+          ) : (
+            <>
+              {askReq.req.options.map((o, i) => {
+                const sel = i === askSel;
+                const mark = askReq.req.multiSelect ? (askChecked.has(i) ? '[x] ' : '[ ] ') : '';
+                return (
+                  <Text key={i}>
+                    {sel ? t.accent('  ❯ ') : '    '}
+                    {mark + `${i + 1}. `}
+                    {sel ? <Text inverse>{protectTerminalText(o.label)}</Text> : protectTerminalText(o.label)}
+                    {o.description ? t.dim('  ' + protectTerminalText(o.description)) : ''}
+                  </Text>
+                );
+              })}
+              <Text>
+                {askSel === askReq.req.options.length ? t.accent('  ❯ ') : '    '}
+                {`${askReq.req.options.length + 1}. `}
+                {askSel === askReq.req.options.length ? <Text inverse>Other…</Text> : 'Other…'}
+                {t.dim('  type your own answer')}
+              </Text>
+            </>
+          )}
+          <Text>
+            {t.dim(
+              askOther
+                ? '  Enter submit · Esc back to the options'
+                : askReq.req.multiSelect
+                  ? '  ↑/↓ move · Space or 1-9 toggle · Enter confirm · Esc dismiss'
+                  : '  ↑/↓ move · 1-9 pick · Enter confirm · Esc dismiss',
+            )}
+          </Text>
         </Box>
       ) : planReq ? (
         <Box flexDirection="column">

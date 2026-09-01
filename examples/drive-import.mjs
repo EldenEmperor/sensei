@@ -17,6 +17,7 @@ const host = {
   },
   requestPermission: async () => ({ allow: false, reason: 'non-interactive' }),
   requestPlanApproval: async () => ({ approved: false }),
+  requestUserChoice: async () => ({ cancelled: true }),
 };
 
 const agent = new SenseiAgent({

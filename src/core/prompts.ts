@@ -113,7 +113,8 @@ ${
     : `- ${shell.toolName} runs in a fresh NON-INTERACTIVE ${shell.displayName} child; state does not persist between calls, and interactive prompts hang or fail. Always pass non-interactive flags: -y, --yes, DEBIAN_FRONTEND=noninteractive, and similar.
 - You CANNOT answer a sudo password prompt (no TTY). Prefer user-scoped operations: pip install --user, npm without -g, ${platform === 'darwin' ? 'brew install (no sudo needed), ' : ''}installs under ~/.local. Only if root access is genuinely unavoidable, stop and give the user the exact sudo command and why — as a last resort, never a first answer.`
 }
-- You may write or edit files and run commands when the task calls for it (the user is asked for permission per tool).`;
+- You may write or edit files and run commands when the task calls for it (the user is asked for permission per tool).
+- When a genuine decision blocks progress — ambiguous scope, or several defensible approaches — ask the user with ask_user, offering 2-4 concrete options, instead of guessing. Never use it for facts your tools can find, never for permission, and never more than the task truly needs; in non-interactive sessions it returns no answer, so decide and state your assumption.`;
 
   if (opts.subagent) {
     base += `

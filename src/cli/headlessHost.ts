@@ -3,7 +3,7 @@
 // the only thing on stdout.
 
 import type { AgentEvent, AgentHost, PlanApprovalDecision } from '../core/events.js';
-import type { PermissionDecision, PermissionRequest } from '../core/types.js';
+import type { PermissionDecision, PermissionRequest, UserChoiceDecision, UserQuestionRequest } from '../core/types.js';
 import { formatToolArgs, sanitizeTerminalText, stripThinkForDisplay } from './textOutput.js';
 
 export type OutputFormat = 'text' | 'json' | 'stream-json';
@@ -53,5 +53,9 @@ export class HeadlessHost implements AgentHost {
 
   requestPlanApproval(_plan: string): Promise<PlanApprovalDecision> {
     return Promise.resolve({ approved: false });
+  }
+
+  requestUserChoice(_req: UserQuestionRequest): Promise<UserChoiceDecision> {
+    return Promise.resolve({ cancelled: true });
   }
 }

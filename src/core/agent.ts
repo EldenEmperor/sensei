@@ -587,7 +587,7 @@ export class SenseiAgent {
         });
         const r = await this.runSubagent(String(a.prompt ?? ''), {
           maxRounds: 25,
-          excludeTools: ['task', 'task_parallel', 'verify', 'exit_plan_mode'],
+          excludeTools: ['task', 'task_parallel', 'verify', 'exit_plan_mode', 'ask_user'],
           systemPrompt: def?.prompt,
           allowedTools: def?.tools ?? undefined,
           model: def?.model ?? undefined,
@@ -604,6 +604,59 @@ export class SenseiAgent {
     this.registerTaskTool();
 
     this.registry.register({
+      name: 'ask_user',
+      readOnly: true,
+      description:
+        'Ask the USER a clarifying question when a genuine decision blocks you and its answer cannot be found with tools — ambiguous scope, or more than one defensible approach. Give 2-4 concrete options; the user can also type a free-form answer or dismiss. Use sparingly: never for facts discoverable in the repo/config, never to ask permission (the permission system handles that), and never more than needed.',
+      parameters: {
+        type: 'object',
+        properties: {
+          question: { type: 'string', description: "The complete question, ending with '?'" },
+          header: { type: 'string', description: 'Very short label for the question (max ~12 chars), e.g. "Auth method"' },
+          options: {
+            type: 'array',
+            description: '2-4 distinct choices',
+            items: {
+              type: 'object',
+              properties: {
+                label: { type: 'string', description: 'Concise choice text (1-5 words)' },
+                description: { type: 'string', description: 'What picking this means' },
+              },
+              required: ['label'],
+            },
+          },
+          multi_select: { type: 'boolean', description: 'Allow choosing several options (default false)' },
+        },
+        required: ['question', 'options'],
+      },
+      handler: async (a) => {
+        const rawOptions = Array.isArray(a.options) ? (a.options as { label?: unknown; description?: unknown }[]) : [];
+        const options = rawOptions
+          .map((o) => ({ label: String(o?.label ?? '').trim(), description: o?.description ? String(o.description) : undefined }))
+          .filter((o) => o.label !== '')
+          .slice(0, 4);
+        if (!a.question || options.length < 2) {
+          return 'ERROR: ask_user needs a question and 2-4 options';
+        }
+        const decision = await this.host.requestUserChoice({
+          question: String(a.question),
+          header: a.header ? String(a.header) : undefined,
+          options,
+          multiSelect: Boolean(a.multi_select),
+        });
+        if (decision.cancelled) {
+          return '(no answer — the user dismissed the question or the session is non-interactive. Proceed with your best judgment and state the assumption.)';
+        }
+        if (decision.otherText !== undefined) {
+          return `The user answered: ${decision.otherText}`;
+        }
+        const chosen = options.filter((o) => decision.selected.includes(o.label));
+        const detail = chosen.map((o) => (o.description ? `${o.label} (${o.description})` : o.label));
+        return `The user chose: ${detail.join(', ') || decision.selected.join(', ')}`;
+      },
+    });
+
+    this.registry.register({
       name: 'verify',
       readOnly: true,
       description:
@@ -617,7 +670,7 @@ export class SenseiAgent {
         this.emit({ type: 'subagent-start', description: `verify: ${String(a.claim ?? '')}` });
         const r = await this.runSubagent(
           `Independently verify this claim by inspecting the actual files/logs with read-only tools. Do not assume it is true. Reply starting with PASS or FAIL, then the evidence (path:line):\n\n${a.claim}`,
-          { maxRounds: 15, excludeTools: ['task', 'verify', 'task_parallel'] },
+          { maxRounds: 15, excludeTools: ['task', 'verify', 'task_parallel', 'ask_user'] },
         );
         if (r.aborted) return 'ERROR: verification aborted';
         this.emit({ type: 'subagent-end', rounds: r.rounds });
@@ -678,7 +731,7 @@ export class SenseiAgent {
           tasks.map((t) =>
             this.runSubagent(String(t.prompt), {
               maxRounds: 20,
-              excludeTools: ['task', 'task_parallel', 'verify'],
+              excludeTools: ['task', 'task_parallel', 'verify', 'ask_user'],
               nonInteractive: true, // concurrent subagents can't share an interactive prompt
             })
               .then((r) => r.finalText ?? '(no result)')
@@ -707,7 +760,7 @@ export class SenseiAgent {
     this.note('auto-verify: checking the changes…');
     const r = await this.runSubagent(
       'The agent just modified one or more files in this directory to satisfy the user. Inspect the current state of those files with read-only tools and judge whether the change is correct and complete. Reply starting with PASS or FAIL, then brief evidence.',
-      { maxRounds: 12, excludeTools: ['task', 'task_parallel', 'verify', 'exit_plan_mode'] },
+      { maxRounds: 12, excludeTools: ['task', 'task_parallel', 'verify', 'exit_plan_mode', 'ask_user'] },
     );
     if (r.finalText) this.note(`auto-verify: ${r.finalText}`);
   }

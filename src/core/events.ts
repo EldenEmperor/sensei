@@ -1,4 +1,4 @@
-import type { PermissionDecision, PermissionRequest, Todo } from './types.js';
+import type { PermissionDecision, PermissionRequest, Todo, UserChoiceDecision, UserQuestionRequest } from './types.js';
 
 export type AgentEvent =
   | { type: 'turn-start'; depth: number }
@@ -24,4 +24,7 @@ export interface AgentHost {
   onEvent(e: AgentEvent): void;
   requestPermission(req: PermissionRequest): Promise<PermissionDecision>;
   requestPlanApproval(plan: string): Promise<PlanApprovalDecision>;
+  /** ask_user tool: present a clarifying question with options; non-interactive
+   *  hosts resolve { cancelled: true }. */
+  requestUserChoice(req: UserQuestionRequest): Promise<UserChoiceDecision>;
 }

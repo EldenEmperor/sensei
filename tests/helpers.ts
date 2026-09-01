@@ -14,6 +14,8 @@ import type {
   PermissionDecision,
   PermissionRequest,
   ToolCall,
+  UserChoiceDecision,
+  UserQuestionRequest,
 } from '../src/core/types.js';
 
 export function makeTempDir(prefix: string): string {
@@ -84,6 +86,14 @@ export class RecordingHost implements AgentHost {
 
   requestPlanApproval(): Promise<PlanApprovalDecision> {
     return Promise.resolve(this.planApprovalResponse);
+  }
+
+  userChoiceResponse: UserChoiceDecision = { cancelled: true };
+  readonly userQuestions: UserQuestionRequest[] = [];
+
+  requestUserChoice(req: UserQuestionRequest): Promise<UserChoiceDecision> {
+    this.userQuestions.push(req);
+    return Promise.resolve(this.userChoiceResponse);
   }
 
   notes(): string[] {

@@ -119,6 +119,23 @@ export interface PermissionRequest {
   suggestedPersistRule: string;
 }
 
+export interface UserQuestionOption {
+  label: string;
+  description?: string;
+}
+
+export interface UserQuestionRequest {
+  question: string;
+  /** Short chip label, e.g. "Auth method". */
+  header?: string;
+  options: UserQuestionOption[];
+  multiSelect: boolean;
+}
+
+export type UserChoiceDecision =
+  | { cancelled: true }
+  | { cancelled?: false; selected: string[]; otherText?: string };
+
 export type PermissionDecision =
   | { allow: true; scope: 'once' | 'session' | 'persist' }
   | { allow: false; reason: 'denied' | 'plan-mode' | 'non-interactive' };

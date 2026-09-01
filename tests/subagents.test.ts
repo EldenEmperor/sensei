@@ -113,6 +113,58 @@ describe('subagents', () => {
   });
 });
 
+describe('ask_user', () => {
+  it('returns the chosen option (with description) to the model', async () => {
+    fake.enqueue(
+      toolCallResponse([
+        {
+          id: 'q1',
+          name: 'ask_user',
+          args: {
+            question: 'Which auth flow?',
+            header: 'Auth',
+            options: [
+              { label: 'OAuth', description: 'browser sign-in' },
+              { label: 'API key', description: 'env var' },
+            ],
+          },
+        },
+      ]),
+    );
+    fake.enqueue(stopResponse('using API key'));
+    const agent = makeAgent({ interactive: true });
+    host.userChoiceResponse = { selected: ['API key'] };
+    await agent.ask('set up auth');
+    host.userChoiceResponse = { cancelled: true };
+    expect(host.userQuestions[0].question).toBe('Which auth flow?');
+    const toolMsg = agent.messages.find((m) => m.role === 'tool');
+    expect(toolMsg?.content).toBe('The user chose: API key (env var)');
+  });
+
+  it('cancelled/non-interactive tells the model to proceed with judgment', async () => {
+    fake.enqueue(
+      toolCallResponse([
+        { id: 'q1', name: 'ask_user', args: { question: 'Pick?', options: [{ label: 'a' }, { label: 'b' }] } },
+      ]),
+    );
+    fake.enqueue(stopResponse('deciding myself'));
+    const agent = makeAgent();
+    await agent.ask('go');
+    const toolMsg = agent.messages.find((m) => m.role === 'tool');
+    expect(toolMsg?.content).toContain('best judgment');
+  });
+
+  it('subagents do not get the ask_user tool', async () => {
+    fake.enqueue(toolCallResponse([{ id: 't1', name: 'task', args: { description: 'side', prompt: 'work' } }]));
+    fake.enqueue(stopResponse('child report'));
+    fake.enqueue(stopResponse('done'));
+    const agent = makeAgent();
+    await agent.ask('delegate');
+    expect(fake.seenToolSpecs[0]).toContain('ask_user'); // parent has it
+    expect(fake.seenToolSpecs[1]).not.toContain('ask_user'); // child does not
+  });
+});
+
 describe('exit_plan_mode', () => {
   it('approval ends plan mode and re-seeds the system prompt', async () => {
     fake.enqueue(toolCallResponse([{ id: 'p1', name: 'exit_plan_mode', args: { plan: '1. do the thing' } }]));

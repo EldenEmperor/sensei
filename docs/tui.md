@@ -80,6 +80,25 @@ Proposed plan:
   of the session ([acceptEdits](permissions.md#permission-modes))
 - `n`/Esc — sensei stays in plan mode and asks what to change
 
+## Clarifying questions
+
+When a genuine decision blocks sensei mid-task (ambiguous scope, several defensible
+approaches), it can ask you instead of guessing — the `ask_user` tool renders a picker:
+
+```
+◆ Auth method — Which auth flow should the CLI use?
+  ❯ 1. OAuth        browser sign-in
+    2. API key      read from an env var
+    3. Other…       type your own answer
+  ↑/↓ move · 1-9 pick · Enter confirm · Esc dismiss
+```
+
+- ↑/↓ or a digit selects; Enter confirms; **Other…** opens a one-line free-text answer
+- multi-select questions show checkboxes (Space toggles, Enter confirms the set)
+- Esc dismisses — sensei is told to proceed with its best judgment and state the assumption
+- Headless sessions never hang on questions: the tool immediately returns "no answer,
+  proceed with judgment". Subagents don't get the tool at all.
+
 ## Permission prompts
 
 When a tool needs approval you'll see the call (file edits show a line diff) and
