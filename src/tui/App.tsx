@@ -153,7 +153,7 @@ export function App({ agent, host, version, bannerFrames, sprites, mcp }: AppPro
   const [bannerFrozen, setBannerFrozen] = useState(false);
   const bannerFrozenRef = useRef(false);
   const bannerIdxRef = useRef(0);
-  const [flourish, setFlourish] = useState<{ anim: 'sheath' | 'summon'; start: number } | null>(null);
+  const [flourish, setFlourish] = useState<{ anim: string; start: number } | null>(null);
   const [subtaskCount, setSubtaskCount] = useState(0);
   const abortRef = useRef<AbortController | null>(null);
   const streamRef = useRef('');
@@ -543,7 +543,9 @@ export function App({ agent, host, version, bannerFrames, sprites, mcp }: AppPro
           break;
         }
         const id = agent.runBackgroundSubtask(arg);
-        if (sprites?.summon && theme.enabled) setFlourish({ anim: 'summon', start: Date.now() });
+        if (theme.enabled && (sprites?.spawn ?? sprites?.summon)) {
+          setFlourish({ anim: sprites?.spawn ? 'spawn' : 'summon', start: Date.now() });
+        }
         push(t.accent(`⛩ ${id} spawned`) + t.dim(` — working in the background: ${protectTerminalText(arg.slice(0, 60))}`));
         break;
       }

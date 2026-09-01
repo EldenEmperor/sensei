@@ -23,7 +23,7 @@ const PALETTE = {
 
 // the blue sensei, side view, facing right; hand at ~(9,5).
 // Canvas is 34 wide: room for the red rival and the mini melee.
-const WIDTH = 48; // room for the red rival and up to three mini duel pairs
+const WIDTH = 60; // the primary duel plus up to three mini duel pairs
 const BASE = [
   '.....W..........',
   '....WAW.........',
@@ -128,36 +128,54 @@ function duelPair(px, dy, phase) {
   return out;
 }
 
-// pair stations: ground-left, aerial-center, ground-right — disjoint boxes
+// pair stations to the right of the primary's own duel (which spans ~x3-25):
+// ground, aerial (raised), ground — disjoint boxes
 const PAIR_SPOTS = [
-  { px: 14, dy: 0 },
-  { px: 25, dy: -3 },
-  { px: 36, dy: 0 },
+  { px: 27, dy: 0 },
+  { px: 38, dy: -3 },
+  { px: 49, dy: 0 },
 ];
 
-/** The mini duels for n subagents: each clone materializes WITH its own red
- *  opponent, then the pairs fight — phases staggered so the whole field is
- *  always in motion. */
+/** The primary's own duel poses, phase-matched to the pair rhythm: he is
+ *  working too, so he fights his rival while the minis fight theirs. */
+function primaryDuel(phase) {
+  if (phase === 1) {
+    // primary strikes, rival parries — spark at the meeting point
+    return [...BLADE_STRIKE, ...redBody(1), ...redBladeParry(1), [13, 4, 'W'], [14, 5, 'W']];
+  }
+  if (phase === 2) {
+    // rival counter-strikes at the primary's guard
+    return [...BLADE_UP, ...redBody(0), ...redBladeStrike(0), [11, 5, 'W'], [12, 4, 'W']];
+  }
+  // square off at range
+  return [...BLADE_UP, ...redBody(3), ...redBladeUp(3)];
+}
+
+/** The working field for n subagents: the primary duels his rival on the
+ *  left while each clone fights its OWN red on the right — every phase
+ *  offset per station so the whole field is always in motion. Pure fighting:
+ *  materialization lives in the one-shot `spawn` anim, not this loop. */
 function summonFrames(n) {
   const spots = PAIR_SPOTS.slice(0, n);
-  const frames = [
-    // materialize: sparks, then both sides as spectral outlines
-    [...BLADE_UP, ...spots.flatMap(({ px, dy }) => [[px + 1, 5 + dy, 'A'], [px + 3, 3 + dy, 'A'], [px + 8, 5 + dy, 'O'], [px + 9, 3 + dy, 'O']])],
+  return [0, 1, 2].map((f) => [
+    ...primaryDuel(f % 3),
+    ...spots.flatMap(({ px, dy }, i) => duelPair(px, dy, (f + i + 1) % 3)),
+  ]);
+}
+
+/** One-shot spawn: a clone and its red opponent condense out of sparks at the
+ *  first station (played as a flourish when /subtask fires). */
+function spawnFrames() {
+  const { px, dy } = PAIR_SPOTS[0];
+  return [
+    [...BLADE_UP, [px + 1, 5 + dy, 'A'], [px + 3, 3 + dy, 'A'], [px + 8, 5 + dy, 'O'], [px + 9, 3 + dy, 'O']],
     [
       ...BLADE_UP,
-      ...spots.flatMap(({ px, dy }) => [
-        ...miniGhost(px - 14, dy),
-        ...miniRedBody(px, dy).filter((_, i) => i % 2 === 0).map(([x, y]) => [x, y, 'O']),
-      ]),
+      ...miniGhost(px - 14, dy),
+      ...miniRedBody(px, dy).filter((_, i) => i % 2 === 0).map(([x, y]) => [x, y, 'O']),
     ],
-    // the duels: each pair cycles square-off → blue lunge → red counter,
-    // offset per station so no two pairs are ever in the same pose
-    ...[0, 1, 2].map((f) => [
-      ...BLADE_UP,
-      ...spots.flatMap(({ px, dy }, i) => duelPair(px, dy, (f + i) % 3)),
-    ]),
+    [...BLADE_UP, ...duelPair(px, dy, 0)],
   ];
-  return frames;
 }
 
 /** name → { delayMs, mode, frames: overlay[][] } — overlays are [x, y, palette char]. */
@@ -205,6 +223,8 @@ const ANIMS = {
   summon: { delayMs: 150, mode: 'loop', frames: summonFrames(1) },
   summon2: { delayMs: 150, mode: 'loop', frames: summonFrames(2) },
   summon3: { delayMs: 150, mode: 'loop', frames: summonFrames(3) },
+  // /subtask fires: the new pair condenses out of sparks (one-shot flourish)
+  spawn: { delayMs: 160, mode: 'once', frames: spawnFrames() },
   // the answer landed: blade away, clean click (played once)
   sheath: {
     delayMs: 120,

@@ -96,7 +96,7 @@ describe('sprite parsing', () => {
     const anims = parseSprites(fs.readFileSync(path.resolve(here, '..', 'assets', 'sprites.txt'), 'utf8'));
     // thinking/slash = the red-vs-blue duel, scout = the spyglass, summonN =
     // the mini melee with one clone per active subagent (capped at three)
-    expect(Object.keys(anims).sort()).toEqual(['scout', 'sheath', 'slash', 'summon', 'summon2', 'summon3', 'thinking']);
+    expect(Object.keys(anims).sort()).toEqual(['scout', 'sheath', 'slash', 'spawn', 'summon', 'summon2', 'summon3', 'thinking']);
     for (const anim of Object.values(anims)) {
       expect(anim.frames.length).toBeGreaterThan(1);
       const heights = new Set(anim.frames.map((f) => f.length));
