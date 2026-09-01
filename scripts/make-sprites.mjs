@@ -75,16 +75,40 @@ function summonFrames(n) {
   ];
 }
 
+// an incoming orb (a "blob" of work drifting toward the sensei), diamond-shaped
+const orb = (x, y) => [
+  [x + 1, y, 'I'],
+  [x, y + 1, 'I'], [x + 1, y + 1, 'W'], [x + 2, y + 1, 'A'],
+  [x + 1, y + 2, 'A'],
+];
+// the horizontal strike that cuts it
+const BLADE_STRIKE = [[9, 5, 'A'], [10, 5, 'I'], [11, 5, 'I'], [12, 5, 'I'], [13, 5, 'W']];
+
 /** name → { delayMs, mode, frames: overlay[][] } — overlays are [x, y, palette char]. */
 const ANIMS = {
-  // waiting on the model: blade held high, glint travelling
+  // waiting on the model: work drifts in as an orb and gets SLICED —
+  // approach, coil, strike, the halves tumble apart, reset, breathe
   thinking: {
-    delayMs: 220,
+    delayMs: 150,
     mode: 'loop',
     frames: [
-      BLADE_UP,
-      [[10, 5, 'A'], [10, 4, 'I'], [10, 3, 'W'], [10, 2, 'I'], [10, 1, 'I'], [10, 0, 'I']],
-      [[10, 5, 'A'], [10, 4, 'I'], [10, 3, 'I'], [10, 2, 'I'], [10, 1, 'W'], [10, 0, 'I']],
+      [...BLADE_UP, ...orb(24, 4)], // an orb appears far right
+      [...BLADE_UP, ...orb(21, 4)], // drifting in
+      [[10, 5, 'A'], [10, 4, 'I'], [10, 3, 'I'], [10, 2, 'W'], [10, 1, 'I'], [10, 0, 'I'], ...orb(18, 4)], // coil: glint charges
+      [...BLADE_STRIKE, ...orb(15, 4).map(([x, y]) => [x, y, 'W']), [14, 4, 'W'], [14, 6, 'W']], // STRIKE — white flash
+      [
+        ...BLADE_STRIKE,
+        [15, 3, 'I'], [16, 2, 'A'], // upper half flies up-right
+        [15, 7, 'I'], [16, 8, 'A'], // lower half falls down-right
+        [14, 5, 'W'], // spark at the cut
+      ],
+      [
+        [10, 5, 'A'], [10, 4, 'I'], [11, 3, 'I'], // blade returning
+        [17, 1, 'I'], [18, 2, 'A'],
+        [17, 9, 'I'], [18, 8, 'A'],
+      ],
+      [...BLADE_UP, [19, 1, 'A'], [19, 9, 'A']], // last embers of the halves
+      BLADE_UP, // clean breath before the next one
     ],
   },
   // a tool is running: full sword arc with trail and sparks
