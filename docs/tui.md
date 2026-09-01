@@ -122,6 +122,15 @@ When a tool needs approval you'll see the call (file edits show a line diff) and
 `[y]es / [n]o / [a]lways this session / [p]ersist to allowlist`. Details in
 [Permissions](permissions.md).
 
+## The animations
+
+The samurai tells you what's happening: while the model works or a state-changing tool
+runs, the blue sensei **duels a red rival agent** (measured tempo while thinking, full
+tempo mid-tool); searching/observing tools (grep, glob, reads, web/log tools) raise a
+**long spyglass** instead; subagents appear as **mini samurai swarming a red mini** —
+one clone per active subagent, up to three, all in motion; the turn ends on a clean
+sheath. `theme: false` in config turns all of it off.
+
 ## The working status
 
 While sensei works, the spinner line is a live readout instead of a bare "thinking…":

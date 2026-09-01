@@ -103,6 +103,23 @@ interface AppProps {
 
 const SUBAGENT_TOOLS = ['task', 'verify', 'task_parallel'];
 
+// observing/searching tools show the spyglass instead of the duel
+const SCOUT_TOOLS = new Set([
+  'grep',
+  'glob',
+  'read_file',
+  'web_fetch',
+  'web_search',
+  'web_browser',
+  'log_stats',
+  'log_slice',
+  'log_search',
+  'log_timeline',
+  'log_trace',
+  'log_baseline',
+  'log_investigate',
+]);
+
 export function App({ agent, host, version, bannerFrames, sprites, mcp }: AppProps): React.ReactElement {
   const { exit } = useApp();
   const { stdout } = useStdout();
@@ -1183,7 +1200,9 @@ export function App({ agent, host, version, bannerFrames, sprites, mcp }: AppPro
       const anim =
         subagentToolActive || (subtaskCount > 0 && !activeTool)
           ? (summonAnim(clones) ?? sprites.thinking)
-          : (sprites[activeTool ? 'slash' : 'thinking'] ?? sprites.thinking);
+          : activeTool && SCOUT_TOOLS.has(activeTool)
+            ? (sprites.scout ?? sprites.slash ?? sprites.thinking)
+            : (sprites[activeTool ? 'slash' : 'thinking'] ?? sprites.thinking);
       if (!anim || anim.frames.length === 0) return null;
       return anim.frames[Math.floor((frame * 100) / anim.delayMs) % anim.frames.length];
     }
