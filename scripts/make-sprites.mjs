@@ -17,7 +17,9 @@ const PALETTE = {
   R: [0xe0, 0x53, 0x3d], // eye ember
 };
 
-// the samurai, side view, facing right; hand at ~(9,5)
+// the samurai, side view, facing right; hand at ~(9,5).
+// Canvas is 30 wide so up to three summoned mini samurai fit on the right.
+const WIDTH = 30;
 const BASE = [
   '.....W..........',
   '....WAW.........',
@@ -31,9 +33,47 @@ const BASE = [
   '...WBW.WBW......',
   '...WW...WW......',
   '................',
-];
+].map((row) => row.padEnd(WIDTH, '.'));
 
 const BLADE_UP = [[10, 5, 'A'], [10, 4, 'I'], [10, 3, 'I'], [10, 2, 'I'], [10, 1, 'I'], [10, 0, 'W']];
+
+// the mini samurai (a summoned clone): same silhouette at half scale, facing
+// right, feet on the big one's ground line, own raised blade. `dx` places
+// each additional clone further right (0, 5, 10).
+const miniBody = (dx) =>
+  [
+    [15, 3, 'A'], [16, 3, 'W'],                              // topknot glow
+    [14, 4, 'W'], [15, 4, 'N'], [16, 4, 'R'], [17, 4, 'W'],  // face + ember eye
+    [15, 5, 'B'], [16, 5, 'B'],                              // shoulders
+    [14, 6, 'W'], [15, 6, 'B'], [16, 6, 'B'], [17, 6, 'B'],  // torso, arm to the hand at (17,6)
+    [15, 7, 'B'], [16, 7, 'B'],                              // waist
+    [14, 8, 'B'], [16, 8, 'B'],                              // legs
+    [14, 9, 'W'], [16, 9, 'W'],                              // feet
+  ].map(([x, y, c]) => [x + dx, y, c]);
+const miniBlade = (dx, glint) =>
+  (glint
+    ? [[18, 5, 'A'], [18, 4, 'W'], [18, 3, 'I'], [18, 2, 'I']]
+    : [[18, 5, 'A'], [18, 4, 'I'], [18, 3, 'I'], [18, 2, 'W']]
+  ).map(([x, y, c]) => [x + dx, y, c]);
+// materializing: every other pixel as spectral glow
+const miniGhost = (dx) => miniBody(dx).filter((_, i) => i % 2 === 0).map(([x, y]) => [x, y, 'A']);
+const miniSparks = (dx) => [[15 + dx, 5, 'A'], [17 + dx, 3, 'A'], [14 + dx, 8, 'A']];
+
+/** The summon loop for n clones: sparks → spectral outline → solid, then a
+ *  standing loop with blade glints alternating across the clones. */
+function summonFrames(n) {
+  const offsets = [0, 5, 10].slice(0, n);
+  const solid = (glintIdx) => [
+    ...BLADE_UP,
+    ...offsets.flatMap((dx, i) => [...miniBody(dx), ...miniBlade(dx, i === glintIdx)]),
+  ];
+  return [
+    [...BLADE_UP, ...offsets.flatMap(miniSparks)],
+    [...BLADE_UP, ...offsets.flatMap((dx) => [...miniGhost(dx), [18 + dx, 3, 'A']])],
+    ...offsets.map((_, i) => solid(i)), // glint travels across the clones
+    solid(-1),
+  ];
+}
 
 /** name → { delayMs, mode, frames: overlay[][] } — overlays are [x, y, palette char]. */
 const ANIMS = {
@@ -58,25 +98,11 @@ const ANIMS = {
       [[10, 8, 'I'], [11, 8, 'I'], [12, 8, 'I'], [13, 7, 'W'], [14, 9, 'W'], [13, 10, 'I'], [12, 4, 'A']],
     ],
   },
-  // subagents at work: a spectral clone materializes
-  summon: {
-    delayMs: 160,
-    mode: 'loop',
-    frames: [
-      [...BLADE_UP, [12, 6, 'A'], [13, 8, 'A']],
-      [...BLADE_UP, [12, 4, 'A'], [11, 6, 'A'], [13, 6, 'A'], [12, 8, 'A'], [11, 9, 'A'], [13, 9, 'A']],
-      [
-        ...BLADE_UP,
-        [12, 3, 'A'], [13, 3, 'A'],
-        [11, 4, 'A'], [12, 4, 'I'], [13, 4, 'A'],
-        [12, 5, 'A'], [13, 5, 'A'],
-        [11, 6, 'A'], [12, 6, 'A'], [13, 6, 'A'], [14, 6, 'A'],
-        [12, 7, 'A'], [13, 7, 'A'],
-        [11, 8, 'A'], [14, 8, 'A'],
-        [11, 9, 'A'], [14, 9, 'A'],
-      ],
-    ],
-  },
+  // subagents at work: mini samurai materialize beside the big one — one
+  // clone per active subagent (summon / summon2 / summon3)
+  summon: { delayMs: 160, mode: 'loop', frames: summonFrames(1) },
+  summon2: { delayMs: 160, mode: 'loop', frames: summonFrames(2) },
+  summon3: { delayMs: 160, mode: 'loop', frames: summonFrames(3) },
   // the answer landed: blade away, clean click (played once)
   sheath: {
     delayMs: 120,

@@ -1168,11 +1168,22 @@ export function App({ agent, host, version, bannerFrames, sprites, mcp }: AppPro
 
   // pick the samurai's move for the moment: slash while a tool runs, summon
   // while subagents work, idle glint while the model thinks, sheath on finish
+  // one summoned mini samurai per active subagent, capped at three clones
+  const summonAnim = (clones: number): SpriteAnim | undefined => {
+    const n = Math.min(3, Math.max(1, clones));
+    return sprites?.[n === 1 ? 'summon' : `summon${n}`] ?? sprites?.summon;
+  };
+
   const spriteFrame = ((): string[] | null => {
     if (!sprites || !theme.enabled) return null;
     if (busy && !permReq && !askReq) {
-      const name = activeTool ? (SUBAGENT_TOOLS.includes(activeTool) ? 'summon' : 'slash') : 'thinking';
-      const anim = sprites[name] ?? sprites.thinking;
+      const subagentToolActive = activeTool !== null && SUBAGENT_TOOLS.includes(activeTool);
+      // clones shown = the running subagent tool (if any) + live /subtasks
+      const clones = (subagentToolActive ? 1 : 0) + subtaskCount;
+      const anim =
+        subagentToolActive || (subtaskCount > 0 && !activeTool)
+          ? (summonAnim(clones) ?? sprites.thinking)
+          : (sprites[activeTool ? 'slash' : 'thinking'] ?? sprites.thinking);
       if (!anim || anim.frames.length === 0) return null;
       return anim.frames[Math.floor((frame * 100) / anim.delayMs) % anim.frames.length];
     }
@@ -1182,8 +1193,8 @@ export function App({ agent, host, version, bannerFrames, sprites, mcp }: AppPro
       return anim.frames[Math.min(anim.frames.length - 1, Math.floor((Date.now() - flourish.start) / anim.delayMs))];
     }
     if (subtaskCount > 0) {
-      // a spectral clone keeps working in the background
-      const anim = sprites.summon;
+      // the clones keep working in the background — one per subtask
+      const anim = summonAnim(subtaskCount);
       if (!anim || anim.frames.length === 0) return null;
       return anim.frames[Math.floor((frame * 100) / anim.delayMs) % anim.frames.length];
     }

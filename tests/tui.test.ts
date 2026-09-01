@@ -91,10 +91,11 @@ describe('sprite parsing', () => {
     expect(anims.sheath.mode).toBe('once');
   });
 
-  it('the committed sprite sheet has the four event animations, frames aligned', () => {
+  it('the committed sprite sheet has the event animations, frames aligned', () => {
     const here = path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1'));
     const anims = parseSprites(fs.readFileSync(path.resolve(here, '..', 'assets', 'sprites.txt'), 'utf8'));
-    expect(Object.keys(anims).sort()).toEqual(['sheath', 'slash', 'summon', 'thinking']);
+    // summon2/summon3 show one clone per active subagent, capped at three
+    expect(Object.keys(anims).sort()).toEqual(['sheath', 'slash', 'summon', 'summon2', 'summon3', 'thinking']);
     for (const anim of Object.values(anims)) {
       expect(anim.frames.length).toBeGreaterThan(1);
       const heights = new Set(anim.frames.map((f) => f.length));
