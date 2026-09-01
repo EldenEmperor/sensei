@@ -174,6 +174,7 @@ export function helpLines(): string[] {
     '  keys: !cmd runs in the shell directly · @path Tab-completes files · \\ then Enter = new line',
     '        typing while busy queues the message · Ctrl+O verbose tool output · Ctrl+A/E/W/U edit',
     '        big pastes collapse to [pasted #N +L lines] and expand when you submit',
+    '        Ctrl+V attaches a clipboard image (screenshot → Ctrl+V) · @"quoted paths" allow spaces',
   ];
 }
 

@@ -62,6 +62,18 @@ describe('image attachment via @path', () => {
     expect(user.content).toContain('too large to attach');
   });
 
+  it('quoted @"paths with spaces" attach (Copy-as-path / Ctrl+V flow)', async () => {
+    const tmp = makeTempDir('sensei-img5-');
+    fs.mkdirSync(path.join(tmp, 'my shots'));
+    fs.writeFileSync(path.join(tmp, 'my shots', 'screen 1.png'), PNG_BYTES);
+    const { agent, fake } = makeAgent(tmp);
+    fake.enqueue(stopResponse('ok'));
+    await agent.ask('what is @"my shots/screen 1.png" showing?');
+    const parts = agent.messages.find((m) => m.role === 'user')!.content as ContentPart[];
+    expect(parts[0]).toMatchObject({ type: 'image', media_type: 'image/png' });
+    expect((parts[1] as { text: string }).text).toContain('what is @"my shots/screen 1.png" showing?');
+  });
+
   it('jpg/webp extensions map media types; --file works via the same path', async () => {
     const tmp = makeTempDir('sensei-img4-');
     fs.writeFileSync(path.join(tmp, 'photo.JPG'), PNG_BYTES);

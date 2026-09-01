@@ -267,8 +267,9 @@ export class SenseiAgent {
   expandFileReferences(text: string): { text: string; images: { media_type: string; data: string; path: string; bytes: number }[] } {
     let appendix = '';
     const images: { media_type: string; data: string; path: string; bytes: number }[] = [];
-    for (const m of text.matchAll(/(?<=^|\s)@([\w.\\/:~-]+)/g)) {
-      const p = m[1];
+    // @"quoted path with spaces" (Explorer's Copy-as-path pastes quotes) or bare @path
+    for (const m of text.matchAll(/(?<=^|\s)@(?:"([^"]+)"|([\w.\\/:~-]+))/g)) {
+      const p = m[1] ?? m[2];
       let abs: string;
       try {
         abs = resolveSenseiPath(p, this.store.cwd);

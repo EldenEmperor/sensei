@@ -37,6 +37,13 @@ More composer behaviors:
 - **Big pastes collapse to a chip** — `[pasted #1 +42 lines]` — instead of flooding the
   composer; the full text expands into the prompt when you submit. Delete the chip to
   drop the paste.
+- **Ctrl+V attaches a clipboard image**: take a screenshot, press Ctrl+V in sensei — the
+  image is saved to a temp file and `@"path"` lands in your composer, ready to ask
+  about. (Windows uses pwsh; macOS needs `brew install pngpaste`; Linux uses
+  wl-paste/xclip. If your terminal owns Ctrl+V for text paste, it may swallow the key —
+  unbind it in the terminal settings, or attach with `@path` instead.) Quoted
+  `@"paths with spaces"` also work anywhere, so Explorer's Copy-as-path pastes cleanly
+  after an `@`.
 
 ## The slash-command menu
 

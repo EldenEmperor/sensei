@@ -5,6 +5,7 @@
 
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { Box, Static, Text, useApp, useInput, useStdout } from 'ink';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
@@ -432,6 +433,47 @@ export function App({ agent, host, version, bannerFrames, sprites, mcp }: AppPro
         setBusy(false);
         drainQueue();
       });
+  };
+
+  // Ctrl+V: grab an image off the OS clipboard, save it to a temp file, and
+  // drop the @"path" into the composer (screenshot → Ctrl+V → ask about it).
+  const pasteClipboardImage = (): void => {
+    const file = path.join(os.tmpdir(), `sensei-paste-${Date.now()}.png`);
+    const done = (ok: boolean): void => {
+      if (ok && fs.existsSync(file) && fs.statSync(file).size > 0) {
+        setComp((s) => composerReduce(s, { type: 'insert', text: `@"${file}" ` }));
+        push(theme.dim(`(clipboard image saved → ${file})`));
+      } else {
+        push(theme.dim('(no image in the clipboard — text pastes normally; files attach with @path)'));
+      }
+    };
+    try {
+      if (process.platform === 'win32') {
+        const script = `Add-Type -AssemblyName System.Windows.Forms,System.Drawing; $img=[System.Windows.Forms.Clipboard]::GetImage(); if($img -ne $null){ $img.Save('${file.replace(/'/g, "''")}',[System.Drawing.Imaging.ImageFormat]::Png); exit 0 }; exit 1`;
+        const p = spawn('pwsh', ['-NoProfile', '-STA', '-Command', script], { windowsHide: true });
+        p.on('close', (code) => done(code === 0));
+        p.on('error', () => done(false));
+      } else if (process.platform === 'darwin') {
+        const p = spawn('pngpaste', [file]);
+        p.on('close', (code) => done(code === 0));
+        p.on('error', () => push(theme.dim('(image paste needs pngpaste — brew install pngpaste)')));
+      } else {
+        const out = fs.openSync(file, 'w');
+        const p = spawn('sh', ['-c', 'wl-paste -t image/png 2>/dev/null || xclip -selection clipboard -t image/png -o'], {
+          stdio: ['ignore', out, 'ignore'],
+        });
+        p.on('close', (code) => {
+          fs.closeSync(out);
+          done(code === 0);
+        });
+        p.on('error', () => {
+          fs.closeSync(out);
+          done(false);
+        });
+      }
+    } catch {
+      done(false);
+    }
   };
 
   // list what the local Ollama actually has (best-effort, short timeout)
@@ -1098,6 +1140,11 @@ export function App({ agent, host, version, bannerFrames, sprites, mcp }: AppPro
     if (key.ctrl && ch === 'o') {
       verboseRef.current = !verboseRef.current;
       push(theme.dim(`(verbose tool output ${verboseRef.current ? 'on' : 'off'})`));
+      return;
+    }
+    if (key.ctrl && ch === 'v') {
+      // reaches us only when the terminal doesn't own Ctrl+V itself
+      pasteClipboardImage();
       return;
     }
     if (key.upArrow) {
