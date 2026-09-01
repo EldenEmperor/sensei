@@ -23,7 +23,7 @@ const PALETTE = {
 
 // the blue sensei, side view, facing right; hand at ~(9,5).
 // Canvas is 34 wide: room for the red rival and the mini melee.
-const WIDTH = 34;
+const WIDTH = 48; // room for the red rival and up to three mini duel pairs
 const BASE = [
   '.....W..........',
   '....WAW.........',
@@ -98,40 +98,64 @@ const miniJab = (dx, dy = 0) =>
 // spectral materialization
 const miniGhost = (dx, dy = 0) => miniBody(dx, dy).filter((_, i) => i % 2 === 0).map(([x, y]) => [x, y, 'A']);
 
-// the shared red mini the clones gang up on: mirror of miniBody at the right
-// edge (body x26..29, blade x25 pointing left), cold blue eye
-const MINI_RED_PIVOT = 43;
-const MINI_RED = miniBody(0).map(([x, y, c]) => [MINI_RED_PIVOT - x, y, RED_SWAP[c] ?? c]);
-const MINI_RED_BLADE_HIGH = [[25, 5, 'O'], [25, 4, 'I'], [25, 3, 'I'], [25, 2, 'W']];
-const MINI_RED_BLADE_LOW = [[25, 6, 'O'], [24, 6, 'I'], [23, 6, 'I'], [22, 7, 'W']];
+// --- mini duel pairs ---------------------------------------------------------
+// Every working subagent fights its OWN red mini: a 1v1 pair. Pair-local
+// layout (at px): blue body px..px+3, blue blade px+4; red body px+7..px+10
+// facing left, red blade px+6; the clash zone is px+5.
+const MINI_PAIR_PIVOT = 24; // mirrors blue-mini x14..18 → red-mini px+10..px+6
 
-/** The mini melee for n clones: the blues materialize, then swarm the red —
- *  a ground fighter lunging with jabs, a diving attacker from above, and a
- *  reserve pressing in, everyone shifting position frame to frame. */
+const miniRedBody = (px, dy = 0) =>
+  miniBody(0).map(([x, y, c]) => [MINI_PAIR_PIVOT - x + px, y + dy, RED_SWAP[c] ?? c]);
+const miniRedBlade = (px, dy = 0) =>
+  [[6, 5, 'O'], [6, 4, 'I'], [6, 3, 'I'], [6, 2, 'W']].map(([x, y, c]) => [x + px, y + dy, c]);
+// red's counter-jab toward the blue
+const miniRedJab = (px, dy = 0) =>
+  [[6, 6, 'O'], [5, 6, 'I'], [4, 6, 'I'], [3, 6, 'W']].map(([x, y, c]) => [x + px, y + dy, c]);
+
+/** One 1v1 mini duel at (px, dy). Phases: 0 = square off (blades up),
+ *  1 = blue lunges with a jab (red parries, spark), 2 = red counter-jabs
+ *  (blue guards, spark). The blue bobs ±1 with its phase. */
+function duelPair(px, dy, phase) {
+  const blueDx = px - 14 + (phase === 1 ? 1 : 0);
+  const out = [...miniBody(blueDx, dy), ...miniRedBody(px, dy)];
+  if (phase === 1) {
+    out.push(...miniJab(blueDx, dy), ...miniRedBlade(px, dy), [px + 5, 6 + dy, 'W'], [px + 5, 5 + dy, 'A']);
+  } else if (phase === 2) {
+    out.push(...miniBlade(blueDx, dy), ...miniRedJab(px, dy), [px + 4, 6 + dy, 'W'], [px + 3, 7 + dy, 'A']);
+  } else {
+    out.push(...miniBlade(blueDx, dy), ...miniRedBlade(px, dy));
+  }
+  return out;
+}
+
+// pair stations: ground-left, aerial-center, ground-right — disjoint boxes
+const PAIR_SPOTS = [
+  { px: 14, dy: 0 },
+  { px: 25, dy: -3 },
+  { px: 36, dy: 0 },
+];
+
+/** The mini duels for n subagents: each clone materializes WITH its own red
+ *  opponent, then the pairs fight — phases staggered so the whole field is
+ *  always in motion. */
 function summonFrames(n) {
-  const redHigh = [...MINI_RED, ...MINI_RED_BLADE_HIGH];
-  const redLow = [...MINI_RED, ...MINI_RED_BLADE_LOW];
-  // attacker poses per frame: [ground dx, aerial present dy-bob, reserve dx]
-  const ground = (dx, jab) => [...miniBody(dx), ...(jab ? miniJab(dx) : miniBlade(dx))];
-  const aerial = (dy) => [...miniBody(7, dy), [25, 7 + dy, 'I'], [25, 8 + dy, 'W']]; // down-blade meets the red's guard
-  const reserve = (dx) => [...miniBody(dx, 0), ...miniBlade(dx)];
-
-  const fighters = (f) => {
-    const out = [...ground(f.g, f.jab)];
-    if (n >= 2) out.push(...aerial(f.a));
-    if (n >= 3) out.push(...reserve(f.r));
-    return out;
-  };
-
+  const spots = PAIR_SPOTS.slice(0, n);
   const frames = [
-    // materialize
-    [...BLADE_UP, ...redHigh, [16, 5, 'A'], [18, 3, 'A'], [15, 8, 'A']],
-    [...BLADE_UP, ...redHigh, ...miniGhost(0), ...(n >= 2 ? miniGhost(9, -3) : []), ...(n >= 3 ? miniGhost(-2) : [])],
-    // the melee: lunge / dive / press, red parrying high and low
-    [...BLADE_UP, ...redLow, ...fighters({ g: 2, jab: true, a: -3, r: -2 }), [22, 6, 'W']],
-    [...BLADE_UP, ...redHigh, ...fighters({ g: 3, jab: true, a: -2, r: -1 }), [24, 5, 'W'], [26, 3, 'A']],
-    [...BLADE_UP, ...redLow, ...fighters({ g: 2, jab: false, a: -3, r: 0 }), [23, 7, 'A']],
-    [...BLADE_UP, ...redHigh, ...fighters({ g: 4, jab: true, a: -2, r: -1 }), [25, 5, 'W'], [24, 6, 'A']],
+    // materialize: sparks, then both sides as spectral outlines
+    [...BLADE_UP, ...spots.flatMap(({ px, dy }) => [[px + 1, 5 + dy, 'A'], [px + 3, 3 + dy, 'A'], [px + 8, 5 + dy, 'O'], [px + 9, 3 + dy, 'O']])],
+    [
+      ...BLADE_UP,
+      ...spots.flatMap(({ px, dy }) => [
+        ...miniGhost(px - 14, dy),
+        ...miniRedBody(px, dy).filter((_, i) => i % 2 === 0).map(([x, y]) => [x, y, 'O']),
+      ]),
+    ],
+    // the duels: each pair cycles square-off → blue lunge → red counter,
+    // offset per station so no two pairs are ever in the same pose
+    ...[0, 1, 2].map((f) => [
+      ...BLADE_UP,
+      ...spots.flatMap(({ px, dy }, i) => duelPair(px, dy, (f + i) % 3)),
+    ]),
   ];
   return frames;
 }
