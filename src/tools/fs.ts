@@ -60,6 +60,9 @@ export function registerFsTools(registry: ToolRegistry): void {
     handler: async (a, ctx) => {
       const p = resolveSenseiPath(String(a.path), ctx.cwd);
       if (!isFile(p)) return `ERROR: file not found: ${p}`;
+      if (/\.(png|jpe?g|gif|webp)$/i.test(p)) {
+        return `This is a binary image file — I can't read it as text. If the USER wants me to look at it, they can attach it to a message with @${String(a.path)} (images attach as vision input).`;
+      }
       const offset = Math.max(1, Number(a.offset ?? 1));
       const limit = Math.max(1, Number(a.limit ?? 2000));
       const out: string[] = [];

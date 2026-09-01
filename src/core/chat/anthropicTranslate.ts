@@ -112,7 +112,19 @@ export function toAnthropicRequest(
       out.push({ role: 'assistant', content: blocks });
     } else {
       // user (and any stray system mid-transcript, folded to user)
-      out.push({ role: 'user', content: m.content ?? '' });
+      if (Array.isArray(m.content)) {
+        // image parts become base64 source blocks, text parts text blocks
+        out.push({
+          role: 'user',
+          content: m.content.map((p): AnthropicBlock =>
+            p.type === 'image'
+              ? { type: 'image', source: { type: 'base64', media_type: p.media_type, data: p.data } }
+              : { type: 'text', text: p.text },
+          ),
+        });
+      } else {
+        out.push({ role: 'user', content: m.content ?? '' });
+      }
     }
     i++;
   }

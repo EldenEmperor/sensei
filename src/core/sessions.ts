@@ -32,7 +32,8 @@ export function validateTranscript(raw: unknown[]): ChatMessage[] {
     const m = item as Record<string, unknown> | null;
     if (!m || !m.role || m.role === 'system') continue;
     const clean: ChatMessage = { role: m.role as ChatMessage['role'] };
-    if ('content' in m) clean.content = (m.content as string | null) ?? null;
+    // strings and user content-part arrays (images) both round-trip
+    if ('content' in m) clean.content = (m.content as ChatMessage['content']) ?? null;
     if (m.role === 'assistant' && Array.isArray(m.tool_calls) && m.tool_calls.length > 0) {
       clean.tool_calls = (m.tool_calls as Record<string, unknown>[]).map(
         (tc): ToolCall => ({

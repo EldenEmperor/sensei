@@ -14,7 +14,9 @@ type app.log | sensei                                     # piped stdin alone IS
 ```
 
 Attach files with `--file <path>` (repeatable) or inline `@path` references in the
-prompt. `/custom-commands` work headlessly too: `sensei -p "/triage app.log ERROR"`.
+prompt — **image files attach as vision input** (`sensei "what's in this? @shot.png"`,
+needs a vision-capable model). `/custom-commands` work headlessly too:
+`sensei -p "/triage app.log ERROR"`.
 
 ## Flags
 

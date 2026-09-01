@@ -8,7 +8,11 @@ export const TRIM_MARKER = '[earlier conversation trimmed]';
 
 export function messageCharCount(m: ChatMessage): number {
   let chars = 0;
-  if (m.content) chars += String(m.content).length;
+  if (typeof m.content === 'string') chars += m.content.length;
+  else if (Array.isArray(m.content)) {
+    // image parts weigh their base64 length — that is real context cost
+    for (const p of m.content) chars += p.type === 'text' ? p.text.length : p.data.length;
+  }
   if (m.tool_calls) {
     for (const tc of m.tool_calls) {
       chars += tc.function.name.length + tc.function.arguments.length + 40;

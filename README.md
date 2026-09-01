@@ -53,6 +53,7 @@ alone refreshes the linked command (the link points at this repo).
 $env:ANTHROPIC_API_KEY = "sk-ant-..."          # setx ANTHROPIC_API_KEY "sk-ant-..." to persist
 sensei --model claude-opus-5                   # interactive TUI
 sensei "summarize the errors in @app.log" --model claude-opus-5
+sensei "what broke in this screenshot? @error.png"   # images attach as vision input
 
 # GPT models (OpenAI API) — the default provider
 $env:OPENAI_API_KEY = "sk-..."

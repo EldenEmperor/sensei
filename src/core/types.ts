@@ -6,11 +6,26 @@ export interface ToolCall {
   function: { name: string; arguments: string };
 }
 
+/** User-message content parts — images are user-attached only (v1); assistant
+ *  and tool messages stay flat strings. */
+export type ContentPart =
+  | { type: 'text'; text: string }
+  | { type: 'image'; media_type: string; data: string }; // base64
+
 export interface ChatMessage {
   role: 'system' | 'user' | 'assistant' | 'tool';
-  content?: string | null;
+  content?: string | null | ContentPart[];
   tool_calls?: ToolCall[];
   tool_call_id?: string;
+}
+
+/** Flatten any content shape to prose (images become a placeholder). */
+export function contentToText(content: ChatMessage['content']): string {
+  if (content === null || content === undefined) return '';
+  if (typeof content === 'string') return content;
+  return content
+    .map((p) => (p.type === 'text' ? p.text : `[image: ${p.media_type}]`))
+    .join('\n');
 }
 
 export interface ToolSpec {

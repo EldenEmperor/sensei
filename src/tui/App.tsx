@@ -18,12 +18,13 @@ import { getAgentDefs } from '../core/agents.js';
 import { loadSessionFile } from '../core/sessions.js';
 import { transcriptCharCount } from '../core/transcript.js';
 import { getSkills } from '../core/skills.js';
-import type {
-  PermissionDecision,
-  PermissionRequest,
-  Todo,
-  UserChoiceDecision,
-  UserQuestionRequest,
+import {
+  contentToText,
+  type PermissionDecision,
+  type PermissionRequest,
+  type Todo,
+  type UserChoiceDecision,
+  type UserQuestionRequest,
 } from '../core/types.js';
 import type { McpManager } from '../mcp/client.js';
 import { finishedTaskNotes, listBackgroundTasks, stopAllBackgroundTasks } from '../tools/tasks.js';
@@ -846,9 +847,9 @@ export function App({ agent, host, version, bannerFrames, sprites, mcp }: AppPro
             try {
               const loaded = loadSessionFile(f);
               const firstUser = loaded.messages.find(
-                (m) => m.role === 'user' && !String(m.content ?? '').startsWith('['),
+                (m) => m.role === 'user' && !contentToText(m.content).startsWith('['),
               );
-              let preview = String(firstUser?.content ?? '').split(/\r?\n/)[0];
+              let preview = contentToText(firstUser?.content).split(/\r?\n/)[0];
               if (preview.length > 80) preview = preview.slice(0, 77) + '…';
               push(t.dim(`  [${i + 1}] ${path.basename(f)}  ${loaded.messages.length} msgs  ${protectTerminalText(preview)}`));
             } catch {

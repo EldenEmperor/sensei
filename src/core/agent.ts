@@ -19,12 +19,13 @@ import {
 import { AUTO_CONTINUE_NOTE, COMPACT_SYSTEM_PROMPT, getSystemPrompt, isPassiveReply } from './prompts.js';
 import { newSessionId, saveSession, type SessionEnvelope } from './sessions.js';
 import { messageCharCount, transcriptCharCount, trimTranscript } from './transcript.js';
-import type {
-  ChatMessage,
-  PermissionPolicy,
-  Todo,
-  ToolCall,
-  TurnResult,
+import {
+  contentToText,
+  type ChatMessage,
+  type PermissionPolicy,
+  type Todo,
+  type ToolCall,
+  type TurnResult,
 } from './types.js';
 import { registerLogTools } from '../logtools/index.js';
 import type { McpManager } from '../mcp/client.js';
@@ -39,6 +40,14 @@ import { registerSkillTool } from './skills.js';
 import { limitToolOutput, ToolRegistry, type ToolContext } from '../tools/registry.js';
 
 export const MAX_TOOL_ROUNDS = 40;
+
+const IMAGE_MEDIA_TYPES: Record<string, string> = {
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif',
+  '.webp': 'image/webp',
+};
 
 export interface AgentOptions {
   configStore: ConfigStore;
@@ -253,9 +262,11 @@ export class SenseiAgent {
     return stopped;
   }
 
-  /** @file references: inline small files, point big ones at the log tools. */
-  expandFileReferences(text: string): string {
+  /** @file references: images attach as content parts; small text files
+   *  inline; big files are pointed at the log tools. */
+  expandFileReferences(text: string): { text: string; images: { media_type: string; data: string; path: string; bytes: number }[] } {
     let appendix = '';
+    const images: { media_type: string; data: string; path: string; bytes: number }[] = [];
     for (const m of text.matchAll(/(?<=^|\s)@([\w.\\/:~-]+)/g)) {
       const p = m[1];
       let abs: string;
@@ -271,13 +282,22 @@ export class SenseiAgent {
         continue;
       }
       if (!stat.isFile()) continue;
+      const mediaType = IMAGE_MEDIA_TYPES[abs.slice(abs.lastIndexOf('.')).toLowerCase()];
+      if (mediaType) {
+        if (stat.size > 4 * 1024 * 1024) {
+          appendix += `\n--- @file: ${abs} is an image but too large to attach (${Math.round(stat.size / 1024 / 1024)} MB > 4 MB) ---`;
+          continue;
+        }
+        images.push({ media_type: mediaType, data: fs.readFileSync(abs).toString('base64'), path: abs, bytes: stat.size });
+        continue; // the @token stays in the text so the model knows which image is which
+      }
       if (stat.size > 262144) {
         appendix += `\n--- @file: ${abs} is too large to inline (${Math.round(stat.size / 1024)} KB) — use log_stats/log_slice/read_file on it ---`;
         continue;
       }
       appendix += `\n--- @file: ${abs} ---\n${fs.readFileSync(abs, 'utf8')}`;
     }
-    return appendix ? `${text}\n${appendix}` : text;
+    return { text: appendix ? `${text}\n${appendix}` : text, images };
   }
 
   async ask(
@@ -305,7 +325,18 @@ export class SenseiAgent {
     for (const f of opts.files ?? []) text += `\n@${f}`;
     for (const c of hookContext) text += `\n<system-note>${c}</system-note>`;
     const expanded = this.expandFileReferences(text);
-    this.messages.push({ role: 'user', content: expanded });
+    for (const img of expanded.images) {
+      this.note(`(attached image ${img.path} · ${Math.max(1, Math.round(img.bytes / 1024))} KB)`);
+    }
+    // images first, then the text — the common no-image path stays a plain string
+    const content =
+      expanded.images.length > 0
+        ? [
+            ...expanded.images.map((img) => ({ type: 'image' as const, media_type: img.media_type, data: img.data })),
+            { type: 'text' as const, text: expanded.text },
+          ]
+        : expanded.text;
+    this.messages.push({ role: 'user', content });
     this.drainInterjections(this.messages);
     addBackgroundTaskNotices(this.messages);
     this.permissionDenials = [];
@@ -894,7 +925,7 @@ export class SenseiAgent {
     const lines: string[] = [];
     for (let i = 1; i < cut; i++) {
       const m = messages[i];
-      if (m.role === 'user') lines.push(`USER: ${m.content}`);
+      if (m.role === 'user') lines.push(`USER: ${contentToText(m.content)}`);
       else if (m.role === 'assistant') {
         if (m.content) lines.push(`ASSISTANT: ${m.content}`);
         for (const tc of m.tool_calls ?? []) lines.push(`  → called ${tc.function.name}(${tc.function.arguments})`);

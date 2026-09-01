@@ -30,7 +30,10 @@ More composer behaviors:
 - **`!command`** runs directly in the platform shell and prints the output into the
   transcript — no model turn, no tokens.
 - **`@path`** inlines a file into your prompt (large files are pointed at the log
-  tools instead); Tab completes paths, descending directories.
+  tools instead); Tab completes paths, descending directories. **Images attach as vision
+  input**: `@shot.png` (`.png .jpg .jpeg .gif .webp`, up to 4 MB) reaches the model as a
+  real image on both the Anthropic and OpenAI wires — the model must support vision
+  (Claude/GPT models do; most local Ollama models don't).
 - **Big pastes collapse to a chip** — `[pasted #1 +42 lines]` — instead of flooding the
   composer; the full text expands into the prompt when you submit. Delete the chip to
   drop the paste.

@@ -15,6 +15,22 @@ import { classifyHttpError, MAX_ATTEMPTS, sleep } from './retry.js';
 // request timeout, which matters when a local model has to load first.
 const dispatcher = new UndiciAgent({ headersTimeout: 600_000, bodyTimeout: 600_000 });
 
+/** Map internal messages to the chat.completions wire: string contents pass
+ *  through untouched; user content parts become image_url/text blocks. */
+export function toWireMessages(messages: ChatRequest['messages']): unknown[] {
+  return messages.map((m) => {
+    if (!Array.isArray(m.content)) return m;
+    return {
+      ...m,
+      content: m.content.map((p) =>
+        p.type === 'image'
+          ? { type: 'image_url', image_url: { url: `data:${p.media_type};base64,${p.data}` } }
+          : { type: 'text', text: p.text },
+      ),
+    };
+  });
+}
+
 export function stripThinkBlocks(text: string | null): string | null {
   if (!text) return text ?? null;
   const stripped = text.replace(/<think>[\s\S]*?<\/think>\s*/g, '');
@@ -61,7 +77,7 @@ export class OpenAIChatClient implements ChatClient {
     const model = activeModel(this.config, this.provider);
     const body: Record<string, unknown> = {
       model,
-      messages: req.messages,
+      messages: toWireMessages(req.messages),
     };
     // max_completion_tokens only against real api.openai.com — many
     // OpenAI-compatible servers (Ollama, gateways) reject it.
