@@ -94,8 +94,13 @@ export class SenseiAgent {
   /** User interjections (/also, /btw, subtask results) waiting to join the
    *  transcript at the next legal boundary. */
   private pendingInterjections: string[] = [];
-  /** Live background subtasks (/subtask): id → controller + description. */
-  readonly activeSubtasks = new Map<string, { description: string; controller: AbortController }>();
+  /** Live background subtasks (/subtask): id → controller + description +
+   *  the tool it is executing right now (null between tools) — the TUI uses
+   *  this to animate each mini by its activity. */
+  readonly activeSubtasks = new Map<
+    string,
+    { description: string; controller: AbortController; currentTool: string | null }
+  >();
   private nextSubtaskId = 0;
 
   constructor(opts: AgentOptions) {
@@ -205,13 +210,17 @@ export class SenseiAgent {
     const id = `sub${++this.nextSubtaskId}`;
     const description = prompt.split('\n')[0].slice(0, 60);
     const controller = new AbortController();
-    this.activeSubtasks.set(id, { description, controller });
+    this.activeSubtasks.set(id, { description, controller, currentTool: null });
     this.emit({ type: 'subtask-start', id, description });
     void this.runSubagent(prompt, {
       maxRounds: 20,
       excludeTools: ['task', 'task_parallel', 'verify', 'exit_plan_mode', 'ask_user'],
       nonInteractive: true,
       signal: controller.signal,
+      onTool: (tool) => {
+        const entry = this.activeSubtasks.get(id);
+        if (entry) entry.currentTool = tool;
+      },
     })
       .then((r) => {
         const ok = !r.aborted && Boolean(r.finalText);
@@ -336,7 +345,12 @@ export class SenseiAgent {
     maxRounds: number,
     depth: number,
     signal?: AbortSignal,
-    loopOpts: { excludeTools?: string[]; nonInteractive?: boolean; chatClient?: ChatClient } = {},
+    loopOpts: {
+      excludeTools?: string[];
+      nonInteractive?: boolean;
+      chatClient?: ChatClient;
+      onTool?: (tool: string | null) => void;
+    } = {},
   ): Promise<Omit<TurnResult, 'permissionDenials'>> {
     const result: Omit<TurnResult, 'permissionDenials'> = {
       finalText: null,
@@ -422,6 +436,7 @@ export class SenseiAgent {
       for (const tc of toolCalls) {
         const started = Date.now();
         const { name, args, parseError } = parseToolCall(tc);
+        loopOpts.onTool?.(name);
         this.emit({ type: 'tool-start', callId: tc.id, name, args, depth });
         let out: string;
         if (parseError) {
@@ -439,6 +454,7 @@ export class SenseiAgent {
           depth,
         });
         messages.push({ role: 'tool', tool_call_id: tc.id, content: limitToolOutput(out) });
+        loopOpts.onTool?.(null);
       }
 
       if (depth === 0) {
@@ -582,6 +598,8 @@ export class SenseiAgent {
       /** Abort signal; defaults to the main turn's signal. Background
        *  subtasks pass their own so they outlive/abort independently. */
       signal?: AbortSignal;
+      /** Called with each tool name as it starts and null when it finishes. */
+      onTool?: (tool: string | null) => void;
     },
   ): Promise<{ finalText: string | null; aborted: boolean; rounds: number }> {
     const sys = opts.systemPrompt
@@ -613,6 +631,7 @@ export class SenseiAgent {
       excludeTools: exclude,
       nonInteractive: opts.nonInteractive,
       chatClient,
+      onTool: opts.onTool,
     });
     await runHooks('SubagentStop', this.hooks(), this.hookCtx(), { lastMessage: r.finalText ?? '' });
     return { finalText: r.finalText, aborted: r.aborted, rounds: r.rounds };

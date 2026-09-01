@@ -23,7 +23,7 @@ const PALETTE = {
 
 // the blue sensei, side view, facing right; hand at ~(9,5).
 // Canvas is 34 wide: room for the red rival and the mini melee.
-const WIDTH = 60; // the primary duel plus up to three mini duel pairs
+const WIDTH = 34; // widest scene is the primary duel; minis are own columns
 const BASE = [
   '.....W..........',
   '....WAW.........',
@@ -128,53 +128,43 @@ function duelPair(px, dy, phase) {
   return out;
 }
 
-// pair stations to the right of the primary's own duel (which spans ~x3-25):
-// ground, aerial (raised), ground — disjoint boxes
-const PAIR_SPOTS = [
-  { px: 27, dy: 0 },
-  { px: 38, dy: -3 },
-  { px: 49, dy: 0 },
-];
+// Component animations: each subagent renders as its OWN narrow column
+// beside the primary (the TUI lays the columns out with spacing), so a mini's
+// pose can reflect that subagent's live activity. All components draw a
+// single pair at px=1 and rely on trailing-space trimming to stay narrow.
+const MINI_PX = 1;
 
-/** The primary's own duel poses, phase-matched to the pair rhythm: he is
- *  working too, so he fights his rival while the minis fight theirs. */
-function primaryDuel(phase) {
-  if (phase === 1) {
-    // primary strikes, rival parries — spark at the meeting point
-    return [...BLADE_STRIKE, ...redBody(1), ...redBladeParry(1), [13, 4, 'W'], [14, 5, 'W']];
-  }
-  if (phase === 2) {
-    // rival counter-strikes at the primary's guard
-    return [...BLADE_UP, ...redBody(0), ...redBladeStrike(0), [11, 5, 'W'], [12, 4, 'W']];
-  }
-  // square off at range
-  return [...BLADE_UP, ...redBody(3), ...redBladeUp(3)];
-}
+/** One mini duel pair (a clone vs its own red), phases as in duelPair. */
+const minifightFrames = () => [0, 1, 2].map((phase) => duelPair(MINI_PX, 0, phase));
 
-/** The working field for n subagents: the primary duels his rival on the
- *  left while each clone fights its OWN red on the right — every phase
- *  offset per station so the whole field is always in motion. Pure fighting:
- *  materialization lives in the one-shot `spawn` anim, not this loop. */
-function summonFrames(n) {
-  const spots = PAIR_SPOTS.slice(0, n);
-  return [0, 1, 2].map((f) => [
-    ...primaryDuel(f % 3),
-    ...spots.flatMap(({ px, dy }, i) => duelPair(px, dy, (f + i + 1) % 3)),
-  ]);
-}
-
-/** One-shot spawn: a clone and its red opponent condense out of sparks at the
- *  first station (played as a flourish when /subtask fires). */
-function spawnFrames() {
-  const { px, dy } = PAIR_SPOTS[0];
+/** A mini scouting: no opponent — the little telescope comes up, the glint
+ *  travels out, something twinkles ahead. */
+function miniscoutFrames() {
+  // mini face at (3,4); tube extends right at y4 with a lens at the end
+  const tube = [[5, 4, 'A'], [6, 4, 'I'], [7, 4, 'I'], [8, 4, 'A'], [9, 4, 'I'], [10, 4, 'W']];
+  const withGlint = (at) => [
+    ...miniBody(MINI_PX - 14),
+    ...tube.map(([x, y, c]) => [x, y, x === at ? 'W' : c]),
+  ];
   return [
-    [...BLADE_UP, [px + 1, 5 + dy, 'A'], [px + 3, 3 + dy, 'A'], [px + 8, 5 + dy, 'O'], [px + 9, 3 + dy, 'O']],
+    withGlint(6),
+    [...withGlint(8), [12, 3, 'A']],
+    [...withGlint(10), [12, 3, 'W'], [13, 4, 'A']],
+    [...miniBody(MINI_PX - 14), ...tube, [12, 3, 'A']],
+  ];
+}
+
+/** One-shot spawn (the /subtask flourish): a clone and its red opponent
+ *  condense out of sparks into their first clash. */
+function spawnFrames() {
+  const px = MINI_PX;
+  return [
+    [[px + 1, 5, 'A'], [px + 3, 3, 'A'], [px + 8, 5, 'O'], [px + 9, 3, 'O']],
     [
-      ...BLADE_UP,
-      ...miniGhost(px - 14, dy),
-      ...miniRedBody(px, dy).filter((_, i) => i % 2 === 0).map(([x, y]) => [x, y, 'O']),
+      ...miniGhost(px - 14),
+      ...miniRedBody(px).filter((_, i) => i % 2 === 0).map(([x, y]) => [x, y, 'O']),
     ],
-    [...BLADE_UP, ...duelPair(px, dy, 0)],
+    duelPair(px, 0, 0),
   ];
 }
 
@@ -220,11 +210,13 @@ const ANIMS = {
   },
   // subagents at work: the mini melee — clones (one per active subagent)
   // swarm a red mini, everyone in motion
-  summon: { delayMs: 150, mode: 'loop', frames: summonFrames(1) },
-  summon2: { delayMs: 150, mode: 'loop', frames: summonFrames(2) },
-  summon3: { delayMs: 150, mode: 'loop', frames: summonFrames(3) },
+  // per-subagent columns: a mini duel pair, and a mini with a telescope —
+  // the TUI picks per subtask from its live tool activity. base:false — these
+  // render on an empty canvas (they stand beside the primary, not on him)
+  minifight: { delayMs: 150, mode: 'loop', base: false, frames: minifightFrames() },
+  miniscout: { delayMs: 200, mode: 'loop', base: false, frames: miniscoutFrames() },
   // /subtask fires: the new pair condenses out of sparks (one-shot flourish)
-  spawn: { delayMs: 160, mode: 'once', frames: spawnFrames() },
+  spawn: { delayMs: 160, mode: 'once', base: false, frames: spawnFrames() },
   // the answer landed: blade away, clean click (played once)
   sheath: {
     delayMs: 120,
@@ -242,8 +234,10 @@ const RESET = `${ESC}[0m`;
 const fg = ([r, g, b]) => `${ESC}[38;2;${r};${g};${b}m`;
 const bg = ([r, g, b]) => `${ESC}[48;2;${r};${g};${b}m`;
 
-function compose(overlay) {
-  const grid = BASE.map((row) => row.split(''));
+function compose(overlay, withBase = true) {
+  const grid = withBase
+    ? BASE.map((row) => row.split(''))
+    : BASE.map(() => Array(WIDTH).fill('.'));
   for (const [x, y, c] of overlay) {
     if (y >= 0 && y < grid.length && x >= 0 && x < WIDTH) grid[y][x] = c;
   }
@@ -278,7 +272,9 @@ function renderHalfBlocks(grid) {
       }
     }
     if (open) line += RESET;
-    lines.push(line.replace(/ +$/, ''));
+    // a fully blank row keeps one space so frames stay height-aligned
+    // (parseSprites drops truly empty lines)
+    lines.push(line.replace(/ +$/, '') || ' ');
   }
   return lines;
 }
@@ -288,7 +284,7 @@ for (const [name, anim] of Object.entries(ANIMS)) {
   out.push(`%%ANIM ${name} ${anim.delayMs} ${anim.mode}`);
   for (const overlay of anim.frames) {
     out.push('%%FRAME');
-    out.push(...renderHalfBlocks(compose(overlay)));
+    out.push(...renderHalfBlocks(compose(overlay, anim.base !== false)));
   }
 }
 
@@ -303,6 +299,6 @@ if (showIdx >= 0) {
   const name = process.argv[showIdx + 1] ?? 'thinking';
   for (const [i, overlay] of (ANIMS[name]?.frames ?? []).entries()) {
     console.log(`--- ${name} frame ${i}`);
-    console.log(compose(overlay).map((r) => r.join('')).join('\n'));
+    console.log(compose(overlay, ANIMS[name]?.base !== false).map((r) => r.join('')).join('\n'));
   }
 }

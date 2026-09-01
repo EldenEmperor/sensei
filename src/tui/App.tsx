@@ -57,6 +57,15 @@ import { ACCENT_PRESETS, makeTheme, protectTerminalText, resolveAccent, type The
 
 const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 
+// the big wordmark shown under the avatar banner
+const BIG_TITLE = [
+  ' ██████ ███████ ███   ██ ██████ ███████ ██',
+  '██      ██      ████  ██ ██     ██      ██',
+  ' █████  █████   ██ ██ ██  ████  █████   ██',
+  '     ██ ██      ██  ████     ██ ██      ██',
+  '██████  ███████ ██   ███ █████  ███████ ██',
+];
+
 /** Host whose target is wired in after the App mounts (agent needs a host at construction). */
 export class DeferredHost implements AgentHost {
   target: AgentHost | null = null;
@@ -196,11 +205,16 @@ export function App({ agent, host, version, bannerFrames, sprites, mcp }: AppPro
     const modelLabel =
       getActiveModel(agent.store.config, agent.provider) +
       (agent.local ? ' (local · ollama)' : ` (${agent.provider.name})`);
+    const big = BIG_TITLE.map((l, i) =>
+      '  ' + t.accent(l) + (i === BIG_TITLE.length - 1 ? t.dim(`  v${version}`) : ''),
+    );
     return [
-      t.bold(t.accent('  sensei')) +
-        t.dim(
-          ` v${version} · your custom problem solver + agent · model: ${modelLabel}${agent.store.config.mode === 'logs' ? ' · logs mode' : ''}`,
-        ),
+      '',
+      ...big,
+      '',
+      t.dim(
+        `  your custom problem solver + agent · model: ${modelLabel}${agent.store.config.mode === 'logs' ? ' · logs mode' : ''}`,
+      ),
       t.dim('  ask anything (logs are my specialty) — /help for commands'),
       '',
     ];
@@ -1185,28 +1199,24 @@ export function App({ agent, host, version, bannerFrames, sprites, mcp }: AppPro
   const modelLabel =
     getActiveModel(agent.store.config, agent.provider) + (agent.local ? ' · local' : ` · ${agent.provider.name}`);
 
-  // pick the samurai's move for the moment: slash while a tool runs, summon
-  // while subagents work, idle glint while the model thinks, sheath on finish
-  // one summoned mini samurai per active subagent, capped at three clones
-  const summonAnim = (clones: number): SpriteAnim | undefined => {
-    const n = Math.min(3, Math.max(1, clones));
-    return sprites?.[n === 1 ? 'summon' : `summon${n}`] ?? sprites?.summon;
+  // The primary's move: duel while thinking or executing (subagent tools
+  // included — he fights while his clones fight), spyglass while observing,
+  // flourish one-shots (sheath / spawn) between.
+  const loopFrame = (anim: SpriteAnim | undefined, offset = 0): string[] | null => {
+    if (!anim || anim.frames.length === 0) return null;
+    return anim.frames[Math.floor(((frame + offset) * 100) / anim.delayMs) % anim.frames.length];
   };
 
   const spriteFrame = ((): string[] | null => {
     if (!sprites || !theme.enabled) return null;
     if (busy && !permReq && !askReq) {
-      const subagentToolActive = activeTool !== null && SUBAGENT_TOOLS.includes(activeTool);
-      // clones shown = the running subagent tool (if any) + live /subtasks
-      const clones = (subagentToolActive ? 1 : 0) + subtaskCount;
       const anim =
-        subagentToolActive || (subtaskCount > 0 && !activeTool)
-          ? (summonAnim(clones) ?? sprites.thinking)
-          : activeTool && SCOUT_TOOLS.has(activeTool)
-            ? (sprites.scout ?? sprites.slash ?? sprites.thinking)
-            : (sprites[activeTool ? 'slash' : 'thinking'] ?? sprites.thinking);
-      if (!anim || anim.frames.length === 0) return null;
-      return anim.frames[Math.floor((frame * 100) / anim.delayMs) % anim.frames.length];
+        activeTool && SCOUT_TOOLS.has(activeTool)
+          ? (sprites.scout ?? sprites.slash ?? sprites.thinking)
+          : activeTool && !SUBAGENT_TOOLS.includes(activeTool)
+            ? (sprites.slash ?? sprites.thinking)
+            : sprites.thinking;
+      return loopFrame(anim);
     }
     if (flourish !== null) {
       const anim = sprites[flourish.anim];
@@ -1214,12 +1224,31 @@ export function App({ agent, host, version, bannerFrames, sprites, mcp }: AppPro
       return anim.frames[Math.min(anim.frames.length - 1, Math.floor((Date.now() - flourish.start) / anim.delayMs))];
     }
     if (subtaskCount > 0) {
-      // the clones keep working in the background — one per subtask
-      const anim = summonAnim(subtaskCount);
-      if (!anim || anim.frames.length === 0) return null;
-      return anim.frames[Math.floor((frame * 100) / anim.delayMs) % anim.frames.length];
+      // subtasks still working: the primary keeps his own duel going
+      return loopFrame(sprites.thinking);
     }
     return null;
+  })();
+
+  // one column per working subagent, to the right of the primary — each mini
+  // animated by what that subtask is doing right now (telescope while it
+  // observes, its own duel otherwise), phases offset so no two match
+  const miniColumns = ((): { key: string; lines: string[] }[] => {
+    if (!sprites || !theme.enabled) return [];
+    const cols: { key: string; lines: string[] }[] = [];
+    if (busy && activeTool !== null && SUBAGENT_TOOLS.includes(activeTool)) {
+      const lines = loopFrame(sprites.minifight, 1);
+      if (lines) cols.push({ key: 'turn-subagent', lines });
+    }
+    let i = cols.length;
+    for (const [id, s] of agent.activeSubtasks) {
+      if (cols.length >= 3) break;
+      const scouting = s.currentTool !== null && SCOUT_TOOLS.has(s.currentTool);
+      const lines = loopFrame(scouting ? (sprites.miniscout ?? sprites.minifight) : sprites.minifight, 1 + i * 2);
+      if (lines) cols.push({ key: id, lines });
+      i++;
+    }
+    return cols;
   })();
 
   return (
@@ -1236,13 +1265,22 @@ export function App({ agent, host, version, bannerFrames, sprites, mcp }: AppPro
         </Box>
       ) : null}
       {displayStream ? <Text>{renderMarkdown(displayStream, t)}</Text> : null}
-      {spriteFrame ? (
+      {spriteFrame || miniColumns.length > 0 ? (
         <Box flexDirection="row">
-          <Box flexDirection="column">
-            {spriteFrame.map((l, i) => (
-              <Text key={i}>{l}</Text>
-            ))}
-          </Box>
+          {spriteFrame ? (
+            <Box flexDirection="column">
+              {spriteFrame.map((l, i) => (
+                <Text key={i}>{l}</Text>
+              ))}
+            </Box>
+          ) : null}
+          {miniColumns.map((c) => (
+            <Box key={c.key} flexDirection="column" justifyContent="flex-end" marginLeft={4}>
+              {c.lines.map((l, i) => (
+                <Text key={i}>{l}</Text>
+              ))}
+            </Box>
+          ))}
           {busy ? (
             <Box flexDirection="column" justifyContent="flex-end" marginLeft={2}>
               <Text>{t.accent(SPINNER_FRAMES[frame % SPINNER_FRAMES.length]) + ' ' + t.dim(spinnerLabel)}</Text>

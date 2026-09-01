@@ -127,10 +127,10 @@ When a tool needs approval you'll see the call (file edits show a line diff) and
 The samurai tells you what's happening: while the model works or a state-changing tool
 runs, the blue sensei **duels a red rival agent** (measured tempo while thinking, full
 tempo mid-tool); searching/observing tools (grep, glob, reads, web/log tools) raise a
-**long spyglass** instead; each working subagent appears as a **mini 1v1 duel** —
-a mini sensei fighting its own red opponent, one pair per active subagent (up to three,
-staggered ground/aerial/ground, phases rotating so the field is always in motion); the
-turn ends on a clean sheath. `theme: false` in config turns all of it off.
+**long spyglass** instead; each working subagent renders as its **own column** beside
+the primary — a mini 1v1 duel while it executes, or a **mini telescope** while it
+searches/reads (driven by that subtask's live tool), phases offset so no two columns
+match; the turn ends on a clean sheath. `theme: false` in config turns all of it off.
 
 ## The working status
 
